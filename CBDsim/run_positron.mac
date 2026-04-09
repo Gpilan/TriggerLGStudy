@@ -1,0 +1,18 @@
+때# control macro for positron batch run without visualization
+/control/verbose 2
+/run/verbose 1
+/run/numberOfThreads 1
+/run/initialize
+
+# 포지트론 입자 설정 - 디텍터 영역으로 향하도록
+/gun/particle e+
+/gun/energy 1 MeV
+/gun/position 0 0 -1 m
+/gun/direction 0 0 1
+
+# 물리적 상호작용 활성화 (감마와 동일하게 설정)
+/process/activate phot
+/process/activate compt
+/process/activate conv
+
+/run/beamOn 1

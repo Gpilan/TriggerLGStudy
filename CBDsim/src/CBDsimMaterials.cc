@@ -111,6 +111,11 @@ void CBDsimMaterials::CreateMaterials() {
   fPMMA->AddElement(H, natoms=8);
   fPMMA->AddElement(O, natoms=2);
 
+  fProtoLGMatchScint = new G4Material("ProtoLG_MatchScint", density= 1.19*g/cm3, ncomponents=3);
+  fProtoLGMatchScint->AddElement(C, natoms=5);
+  fProtoLGMatchScint->AddElement(H, natoms=8);
+  fProtoLGMatchScint->AddElement(O, natoms=2);
+
   fGelatin = new G4Material("Gelatin", density=1.27*g/cm3, ncomponents=4);
   fGelatin->AddElement(C, natoms=102);
   fGelatin->AddElement(H, natoms=151);
@@ -210,8 +215,8 @@ mpLSO->AddProperty("RINDEX",opEn,RI_LSO,nEnt);
 mpLSO->AddProperty("ABSLENGTH",opEn,Abslength_LSO,nEnt);
 mpLSO->AddConstProperty("SCINTILLATIONYIELD",30000./MeV);
 mpLSO->AddConstProperty("RESOLUTIONSCALE",1.0);//이것도
-mpLSO->AddProperty("FASTCOMPONENT",opEn,scintFast_LSO,nEnt);
-mpLSO->AddConstProperty("FASTTIMECONSTANT",40*ns);
+mpLSO->AddProperty("SCINTILLATIONCOMPONENT1",opEn,scintFast_LSO,nEnt,true);
+mpLSO->AddConstProperty("SCINTILLATIONTIMECONSTANT1",40*ns,true); // true: linear interpolation 03.25
 fLSO->SetMaterialPropertiesTable(mpLSO);
 
 //--- LYSO ---
@@ -225,10 +230,10 @@ G4double scintFast_LYSO[nEnt] = {
 mpLYSO = new G4MaterialPropertiesTable();
 mpLYSO->AddProperty("RINDEX",opEn,RI_LYSO,nEnt);
 mpLYSO->AddProperty("ABSLENGTH",opEn,Abslength_LYSO,nEnt);
-mpLYSO->AddProperty("FASTCOMPONENT",opEn,scintFast_LYSO,nEnt);
+mpLYSO->AddProperty("SCINTILLATIONCOMPONENT1",opEn,scintFast_LYSO,nEnt,true);
 mpLYSO->AddConstProperty("SCINTILLATIONYIELD",33200./MeV);
 mpLYSO->AddConstProperty("RESOLUTIONSCALE",2.0);
-mpLYSO->AddConstProperty("FASTTIMECONSTANT",36*ns);
+mpLYSO->AddConstProperty("SCINTILLATIONTIMECONSTANT1",36*ns,true);
 fLYSO->SetMaterialPropertiesTable(mpLYSO);
 
 //--- PbWO4 ---
@@ -239,12 +244,12 @@ G4double Abslength_PWO[nEnt]; std::fill_n(Abslength_PWO,nEnt,0.92*cm);
 mpPWO = new G4MaterialPropertiesTable();
 mpPWO->AddProperty("RINDEX",opEn,RI_PWO,nEnt);
 mpPWO->AddProperty("ABSLENGTH",opEn,Abslength_PWO,nEnt);
-//mpPWO->AddProperty("FASTCOMPONENT",opEn,scintFast_PWO,nEnt);
-//mpPWO->AddProperty("FASTCOMPONENT",opEn,scintSlow_PWO,nEnt);
+//mpPWO->AddProperty("SCINTILLATIONCOMPONENT1",opEn,scintFast_PWO,nEnt);
+//mpPWO->AddProperty("SCINTILLATIONCOMPONENT2",opEn,scintSlow_PWO,nEnt);
 mpPWO->AddConstProperty("SCINTILLATIONYIELD",400/MeV);
 mpPWO->AddConstProperty("RESOLUTIONSCALE",1.0);
-mpPWO->AddConstProperty("FASTTIMECONSTANT",6*ns);
-mpPWO->AddConstProperty("SLOWTIMECONSTANT",30*ns);
+mpPWO->AddConstProperty("SCINTILLATIONTIMECONSTANT1",6*ns,true);
+mpPWO->AddConstProperty("SCINTILLATIONTIMECONSTANT2",30*ns,true);
 fPWO->SetMaterialPropertiesTable(mpPWO);
 
 
@@ -286,12 +291,18 @@ fPWO->SetMaterialPropertiesTable(mpPWO);
   mpPS = new G4MaterialPropertiesTable();
   mpPS->AddProperty("RINDEX",opEn,RI_PS,nEnt);
   mpPS->AddProperty("ABSLENGTH",opEn,AbsLen_PS,nEnt);
-  mpPS->AddProperty("FASTCOMPONENT",opEn,scintFast_PS,nEnt);
+  mpPS->AddProperty("SCINTILLATIONCOMPONENT1",opEn,scintFast_PS,nEnt,true);
   mpPS->AddConstProperty("SCINTILLATIONYIELD",10./keV);
   mpPS->AddConstProperty("RESOLUTIONSCALE",1.0);
-  mpPS->AddConstProperty("FASTTIMECONSTANT",2.8*ns);
+  mpPS->AddConstProperty("SCINTILLATIONTIMECONSTANT1",2.8*ns,true);
   fPS->SetMaterialPropertiesTable(mpPS);
   fPS->GetIonisation()->SetBirksConstant(0.126*mm/MeV);
+
+  // Proto light guide: same bulk as PMMA; RINDEX = Polystyrene (scint) to suppress Fresnel at scint–LG boundary
+  G4MaterialPropertiesTable* mpProtoLGMatchScint = new G4MaterialPropertiesTable();
+  mpProtoLGMatchScint->AddProperty("RINDEX", opEn, RI_PS, nEnt);
+  mpProtoLGMatchScint->AddProperty("ABSLENGTH", opEn, AbsLen_PMMA, nEnt);
+  fProtoLGMatchScint->SetMaterialPropertiesTable(mpProtoLGMatchScint);
 
   // G4double RI_Glass[nEnt]; std::fill_n(RI_Glass, nEnt, 1.81);
   G4double RI_Glass[nEnt]; std::fill_n(RI_Glass, nEnt, 1.52);

@@ -12,9 +12,16 @@ namespace {
   G4Condition CBDsimEventActionCV = G4CONDITION_INITIALIZER;
 }
 
-CBDsimEventAction::CBDsimEventAction() {}
+CBDsimEventAction::CBDsimEventAction() {
+  fEventData = nullptr;
+}
 
-CBDsimEventAction::~CBDsimEventAction() {}
+CBDsimEventAction::~CBDsimEventAction() {
+  if (fEventData) {
+    delete fEventData;
+    fEventData = nullptr;
+  }
+}
 
 void CBDsimEventAction::BeginOfEventAction(const G4Event* evt) {
   clear();
@@ -39,6 +46,12 @@ void CBDsimEventAction::clear() {
 //memset(fPhysical,0,sizeof(CBDsimInterface::CBDsimTotalPhysical));
   fPhysicalMap.clear();
   fPhotonVector.clear();
+  
+  // fEventData 메모리 누수 방지
+  if (fEventData) {
+    delete fEventData;
+    fEventData = nullptr;
+  }
 }
 
 void CBDsimEventAction::EndOfEventAction(const G4Event* evt) {
@@ -210,7 +223,8 @@ void CBDsimEventAction::queue() {
     G4CONDITIONWAIT(&CBDsimEventActionCV, &lock);
   }
   G4AutoLock lock(&CBDsimEventActionMutex);
-  CBDsimRunAction::sRootIO->fill(fEventData);
+  if (CBDsimRunAction::sRootIO)
+    CBDsimRunAction::sRootIO->fill(fEventData);
   CBDsimRunAction::sNumEvt++;
   G4CONDITIONBROADCAST(&CBDsimEventActionCV);
 }

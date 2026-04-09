@@ -47,7 +47,9 @@ void CBDsimPrimaryGeneratorAction::GeneratePrimaries(G4Event* evt) {
 
   fParticleGun->SetParticlePosition(fOrigin);
 
-  fDirection.setREtaPhi(1.,0.,0.);
+  // Base +z (Proto trigger thin axis, typical /gun/direction 0 0 1). For legacy +x use
+  // /CBDsim/generator/theta 1.570796327 rad (rotateY: +z -> +x).
+  fDirection.set(0., 0., 1.);
   fDirection.rotateY(fTheta);
   fDirection.rotateZ(fPhi);
 

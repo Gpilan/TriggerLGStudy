@@ -1,62 +1,79 @@
 # Set verbosity
 #
 /control/verbose 2
+/control/echo check point 0
 #
 # Use this open statement to create an OpenGL view:
-/vis/open OGL 600x600-0+0
+# OGL = Qt OpenGL (often fails over SSH X11). OGLX = X11 native (works with ssh -X/-Y).
+/vis/open OGL
 #
+/control/echo check point 1
 # Use this open statement to create a .prim file suitable for
 # viewing in DAWN:
 #/vis/open DAWNFILE
 #
+/control/echo check point 2
 # Use this open statement to create a .heprep file suitable for
 # viewing in HepRApp:
 #/vis/open HepRepFile
 #
+/control/echo check point 3
 # Use this open statement to create a .wrl file suitable for
 # viewing in a VRML viewer:
 #/vis/open VRML2FILE
 #
+/control/echo check point 4
 # Disable auto refresh and quieten vis messages whilst scene and
 # trajectories are established:
 /vis/viewer/set/autoRefresh false
 /vis/verbose errors
 #
+/control/echo check point 5
 # Draw geometry:
 /vis/drawVolume
 #
+/control/echo check point 6
 # Specify view angle:
 /vis/viewer/set/upVector 1 0 0
 /vis/viewer/set/viewpointVector 0 1 0
 #
+/control/echo check point 7
 # Specify zoom value:
 /vis/viewer/zoom 1.6
 #
+/control/echo check point 8
 # Specify style (surface or wireframe):
 #/vis/viewer/set/style wireframe
 #
+/control/echo check point 9
 # Draw coordinate axes:
 /vis/scene/add/axes 0 0 0 1 m
 #
+/control/echo check point 10
 # Draw smooth trajectories at end of event, showing trajectory points
 # as markers 2 pixels wide:
+/control/echo check point 11
 /vis/scene/add/trajectories smooth
 /vis/modeling/trajectories/create/drawByCharge
 /vis/modeling/trajectories/drawByCharge-0/default/setDrawStepPts true
 /vis/modeling/trajectories/drawByCharge-0/default/setStepPtsSize 2
 # (if too many tracks cause core dump => /tracking/storeTrajectory 0)
 #
+/control/echo check point 12
 # Draw hits at end of event:
 /vis/scene/add/hits
 #
+/control/echo check point 13
 # To draw only gammas:
 #/vis/filtering/trajectories/create/particleFilter
 #/vis/filtering/trajectories/particleFilter-0/add gamma
 #
+/control/echo check point 14
 # To invert the above, drawing all particles except gammas,
 # keep the above two lines but also add:
 #/vis/filtering/trajectories/particleFilter-0/invert true
 #
+/control/echo check point 15
 # Many other options are available with /vis/modeling and /vis/filtering.
 # For example, to select colour by particle ID:
 #/vis/modeling/trajectories/create/drawByParticleID
@@ -64,18 +81,26 @@
 /vis/modeling/trajectories/create/drawByParticleID
 /vis/modeling/trajectories/drawByParticleID-0/set opticalphoton cyan
 #
+/control/echo check point 16
 # To superimpose all of the events from a given run:
 #/vis/scene/endOfEventAction accumulate
 #
+/control/echo check point 17
 # Re-establish auto refreshing and verbosity:
 /vis/viewer/set/autoRefresh true
 /vis/verbose warnings
 #
+/control/echo check point 18
 # For file-based drivers, use this to create an empty detector view:
 #/vis/viewer/flush
 #
+/control/echo check point 19
 # Set visualization to accumulate events into one picture
 #
+/control/echo check point 20
 #/vis/scene/endOfEventAction accumulate
 
+/control/echo check point 21
 /vis/ogl/set/displayListLimit 1000000
+
+/control/echo check point end

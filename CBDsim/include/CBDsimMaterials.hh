@@ -22,6 +22,8 @@ private:
   G4Material* fAir;
   G4Material* fFluoPoly;
   G4Material* fPMMA;
+  /** PMMA bulk; RINDEX matched to Polystyrene (proto scint) for index-matched scint–LG interface. */
+  G4Material* fProtoLGMatchScint;
   G4Material* fPS;
   G4Material* fCu;
   G4Material* fSi;

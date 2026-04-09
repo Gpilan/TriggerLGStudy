@@ -1,6 +1,6 @@
 #----------------------------------------------------------------------------
 # Setup the project
-cmake_minimum_required(VERSION 2.6 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.16 FATAL_ERROR)
 project(CBDsim)
 
 #----------------------------------------------------------------------------
@@ -64,6 +64,7 @@ set(CBDsim_SCRIPTS
   init_vis.mac
   vis.mac
   run_ele.mac
+  run_ele_60gev.mac
   run_muon.mac
   run_gamma.mac
 )

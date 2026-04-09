@@ -6,4 +6,4 @@
 
 /gun/particle gamma
 /gun/energy 50 MeV
-/run/beamOn 1
+/run/beamOn 10

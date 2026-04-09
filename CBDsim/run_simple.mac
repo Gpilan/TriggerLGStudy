@@ -1,0 +1,20 @@
+# 간단한 테스트 매크로
+/control/verbose 1
+/run/verbose 1
+/run/numberOfThreads 1
+
+# 배치 모드 출력 문제 해결
+/control/cout/ignoreThreadsExcept -1
+/event/verbose 1
+/tracking/verbose 1
+
+/run/initialize
+
+# 일렉트론 입자를 디텍터 중심으로 발사 (90도 회전된 디텍터에 맞춤)
+/gun/particle e-
+/gun/energy 0.5 MeV
+/gun/position 0.5 0 -1 m
+/gun/direction 0 0 1
+
+# 100개 이벤트로 테스트
+/run/beamOn 100

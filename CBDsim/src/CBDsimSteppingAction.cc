@@ -4,6 +4,7 @@
 #include "G4StepPoint.hh"
 #include "G4ParticleDefinition.hh"
 #include "G4ParticleTypes.hh"
+#include "G4OpticalPhoton.hh"
 #include "G4UnitsTable.hh"
 #include <iomanip>
 
@@ -20,6 +21,9 @@ void CBDsimSteppingAction::UserSteppingAction(const G4Step* step)
   // G4cout<<"where are you?"<<G4endl;
   G4Track* track = step->GetTrack();
   // std::cout<<"22222222"<<std::endl;
+  
+  // 변수 초기화
+  num_test = 0;
 
   G4StepPoint* presteppoint = step->GetPreStepPoint();
   // std::cout<<"33333333"<<std::endl;
@@ -31,7 +35,7 @@ void CBDsimSteppingAction::UserSteppingAction(const G4Step* step)
   G4String matName = preVol->GetMaterial()->GetName();
   // std::cout<<"66666666"<<std::endl;
 
-  if ( matName=="G4_Galactic" || matName=="Air" ) return;
+  if ( matName=="G4_Galactic" || matName=="G4_AIR" ) return;
   // std::cout<<"77777777"<<std::endl;
 
   fEdep.Edep = step->GetTotalEnergyDeposit();
@@ -94,7 +98,7 @@ void CBDsimSteppingAction::UserSteppingAction(const G4Step* step)
   G4double sum_all_ke = 0;
   G4double sum_all_e = 0;
   //G4int num_test=0;
-  G4int oPnumber =0;
+  G4int oPnumber = 0;  // 이벤트마다 리셋
 
   if(nSecTotal>0)
   {
@@ -105,16 +109,21 @@ void CBDsimSteppingAction::UserSteppingAction(const G4Step* step)
 
       for(size_t lp1=(*secVec).size()-nSecTotal; lp1<(*secVec).size(); lp1++)
       {
-          if ( (*secVec)[lp1]->GetDefinition() == G4OpticalPhoton::OpticalPhotonDefinition() ){ 
-            oPnumber+=1;
-            // continue;
-            }
+          // Scintillation can create O(10^3–10^5) optical photons per step; per-photon G4cout/fillPhysics
+          // freezes the session. Count only; transport still runs (optical steps return at line 19).
+          if ( (*secVec)[lp1]->GetDefinition() == G4OpticalPhoton::OpticalPhotonDefinition() ) {
+            oPnumber += 1;
+            continue;
+          }
           G4double x= (*secVec)[lp1]->GetPosition().getX();
           G4double y=(*secVec)[lp1]->GetPosition().getY();
           G4double z=(*secVec)[lp1]->GetPosition().getZ();
           G4double energy=(*secVec)[lp1]->GetTotalEnergy();
           G4String PartName=(*secVec)[lp1]->GetDefinition()->GetParticleName();
           G4String PhysicName=(*secVec)[lp1]->GetCreatorProcess()->GetProcessName();
+          
+          // physical 객체 초기화
+          physical = CBDsimInterface::CBDsimPhysicalevent();
           fEventAction->fillPhysics(physical,x,y,z,energy,PartName,PhysicName);
           num_test+=1;
           // G4cout<<"##########################"<<G4endl;
@@ -139,6 +148,8 @@ void CBDsimSteppingAction::UserSteppingAction(const G4Step* step)
               << (*secVec)[lp1]->GetDefinition()->GetParticleSubType() << G4endl;
           }
       }
+      // photon 객체 초기화
+      photon = CBDsimInterface::CBDsimPhoton();
       fEventAction->fillOpticalPhoton(photon,oPnumber);
       G4cout<<"infinity loop?"<<G4endl;
     }

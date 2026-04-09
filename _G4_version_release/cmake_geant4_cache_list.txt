@@ -1,0 +1,16 @@
+================================================================================
+build/CMakeCache.txt 에서 뽑은 Geant4 관련 줄 (저장본)
+호스트: cms02
+디렉터리: ~/Trigger (빌드 시점의 캐시)
+명령:
+  grep -E 'Geant4|G4_|FIND_PACKAGE_MESSAGE_DETAILS_Geant4' build/CMakeCache.txt
+================================================================================
+
+//The directory containing a CMake configuration file for Geant4.
+Geant4_DIR:PATH=/cvmfs/sft.cern.ch/lcg/views/LCG_105/x86_64-el9-gcc13-opt/lib64/cmake/Geant4
+PTL_DIR:PATH=/cvmfs/sft.cern.ch/lcg/views/LCG_105/x86_64-el9-gcc13-opt/lib64/cmake/Geant4/PTL
+//Build example with Geant4 UI and Vis drivers
+//Details about finding Geant4
+FIND_PACKAGE_MESSAGE_DETAILS_Geant4:INTERNAL=[/cvmfs/sft.cern.ch/lcg/views/LCG_105/x86_64-el9-gcc13-opt/lib64/cmake/Geant4/Geant4Config.cmake][v11.2.0()]
+
+================================================================================

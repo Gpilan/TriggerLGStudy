@@ -16,7 +16,8 @@ CBDsimRunAction::CBDsimRunAction(G4int seed, G4String filename)
 
   G4AutoLock lock(&CBDsimRunActionMutex);
 
-  if (!sRootIO) {
+  // ROOT 출력: 파일명이 있을 때만 생성 (빈 문자열이면 GUI/지오메트리 확인용으로 .root 미생성)
+  if (!fFilename.empty() && !sRootIO) {
     sRootIO = new CBDsimRootInterface(fFilename+"_"+std::to_string(fSeed)+".root");
     sRootIO->create();
   }
