@@ -35,15 +35,14 @@ constexpr G4double kRguide = 7.5 * mm;
 constexpr G4int kNPhi = 64;
 constexpr G4int kNSlice = 20;
 /**
- * Thin gap between PS bottom and LG top (y). Coplanar scint box + tessellated LG can trigger
- * GeomNav1002 "stuck track" when many optical secondaries hug boundaries; μm-scale air is negligible
- * for bulk physics but stabilizes navigation. Tune down only if you verify overlaps are clean.
+ * y-offset between PS bottom and LG top. Set to 0 (flush) with vacuum world: no n≠1 layer between
+ * scint and LG for optics. If GeomNav1002 increases at coplanar boundaries, restore a μm gap.
  */
-constexpr G4double kLGZGap = 0.001 * mm;
-/** Same idea at LG tip vs SiPM window (coplanar tessellated cap vs G4Tubs). */
-constexpr G4double kSiPMLGAirGap = 0.001 * mm;
+constexpr G4double kLGZGap = 0.0 * mm;
+/** y gap between LG tip and SiPM package (LG tessellated cap vs G4Tubs). 0 = flush in vacuum. */
+constexpr G4double kSiPMLGAirGap = 0.0 * mm;
 
-/** Extra half-thickness on protoOuterAirEnv so both triggers (incl. T2 Rz) sit comfortably inside one air mother. */
+/** Z-offset margin (same role as before outer-air removal): keeps trigger assemblies off z=0 in world coordinates. */
 constexpr G4double kOuterAirSafetyMargin = 1.0 * mm;
 
 // Match legacy tower wrapping (CBDsimDetectorConstruction)
@@ -51,12 +50,17 @@ constexpr G4double kFoilT = 0.016 * mm;
 /** Inset from nominal foil half-extents so adjacent foil boxes do not share corner volume (avoids ~um overlaps). */
 constexpr G4double kFoilCornerInset = 0.02 * mm;
 constexpr G4double kAirGap = 0.01 * mm;
-/** Extra half-width on protoAirEnv in x,y (outer air already clears world; keep modest). */
 constexpr G4double kEnvMarginXY = 2.0 * mm;
-/** Extra half-length on protoAirEnv in z (LG tip spans ~kRguide in local z — must fit inside mother). */
+/** Used with hzEnvThin to set hzEnv (LG tip radius in local z). */
 constexpr G4double kEnvMarginZ = 0.1 * mm;
-/** Gap between outer faces of the two protoAirEnv boxes along world z (env centers at ±(hzEnv + gap/2)). */
-constexpr G4double kGapBetweenEnvBoxes = 1.0 * mm;
+/**
+ * Clear gap along world z between the two scintillator tiles (beam +z through thin z).
+ * Tile z full thickness = 2*kHzThin. Center separation must be at least that; we use
+ * 2*kHzThin + kTrig12TileFaceGapZ so the slabs do not overlap.
+ */
+constexpr G4double kTrig12TileFaceGapZ = 1.0 * mm;
+/** |kZTrig2 - kZTrig1| = distance between scintillator centers along z. */
+constexpr G4double kTrig12TileCenterSeparationZ = 2.0 * kHzThin + kTrig12TileFaceGapZ;
 // SiPM package (match CBDsimDetectorConstruction front stack thicknesses)
 constexpr G4double kSiPMH = 0.3 * mm;
 constexpr G4double kFilterT = 0.01 * mm;
@@ -107,37 +111,28 @@ G4TessellatedSolid* BuildLightGuideTessellated() {
       const G4ThreeVector& b = v[idx(i, jp)];
       const G4ThreeVector& c = v[idx(i + 1, jp)];
       const G4ThreeVector& d = v[idx(i + 1, j)];
-      ts->AddFacet(new G4TriangularFacet(a, d, c, ABSOLUTE));
-      ts->AddFacet(new G4TriangularFacet(a, c, b, ABSOLUTE));
+      // Quad a–b / d–c: outward normals for positive enclosed volume (GeomSolids1001 if wrong).
+      ts->AddFacet(new G4TriangularFacet(a, b, c, ABSOLUTE));
+      ts->AddFacet(new G4TriangularFacet(a, c, d, ABSOLUTE));
     }
   }
 
   const G4ThreeVector cbot(0.0, -kHyLong - kLGZGap, 0.0);
   for (G4int j = 0; j < kNPhi; ++j) {
     const G4int jp = (j + 1) % kNPhi;
-    ts->AddFacet(new G4TriangularFacet(cbot, v[idx(0, j)], v[idx(0, jp)], ABSOLUTE));
+    ts->AddFacet(new G4TriangularFacet(cbot, v[idx(0, jp)], v[idx(0, j)], ABSOLUTE));
   }
 
   const G4ThreeVector ctop(0.0, -kHyLong - kLGZGap - kLguide, 0.0);
   for (G4int j = 0; j < kNPhi; ++j) {
     const G4int jp = (j + 1) % kNPhi;
-    ts->AddFacet(new G4TriangularFacet(ctop, v[idx(kNSlice, jp)], v[idx(kNSlice, j)], ABSOLUTE));
+    ts->AddFacet(new G4TriangularFacet(ctop, v[idx(kNSlice, j)], v[idx(kNSlice, jp)], ABSOLUTE));
   }
 
   ts->SetSolidClosed(true);
   return ts;
 }
 
-/** Descendant search without G4VPhysicalVolume::GetMother / G4PVPlacement::GetMotherPhysical (API varies by G4 version; see repo _G4_version_release). */
-G4VPhysicalVolume* FindDaughterPVByName(G4VPhysicalVolume* parent, const G4String& name) {
-  auto* lv = parent->GetLogicalVolume();
-  for (G4int i = 0; i < lv->GetNoDaughters(); ++i) {
-    auto* d = lv->GetDaughter(i);
-    if (d->GetName() == name) return d;
-    if (auto* found = FindDaughterPVByName(d, name)) return found;
-  }
-  return nullptr;
-}
 }  // namespace
 
 CBDsimDetectorConstructionProto::CBDsimDetectorConstructionProto() {
@@ -163,7 +158,6 @@ CBDsimDetectorConstructionProto::~CBDsimDetectorConstructionProto() {
 
 void CBDsimDetectorConstructionProto::DefineMaterials() {
   fMaterials = CBDsimMaterials::GetInstance();
-  G4NistManager::Instance()->FindOrBuildMaterial("G4_AIR");
   G4NistManager::Instance()->FindOrBuildMaterial("G4_Galactic");
 }
 
@@ -177,50 +171,43 @@ G4VPhysicalVolume* CBDsimDetectorConstructionProto::Construct() {
   G4LogicalBorderSurface::CleanSurfaceTable();
 
   auto* worldSolid = new G4Box("protoWorld", 0.5 * m, 0.5 * m, 0.5 * m);
-  auto* worldLog = new G4LogicalVolume(worldSolid, FindMaterial("G4_AIR"), "protoWorldLog");
+  auto* worldLog = new G4LogicalVolume(worldSolid, FindMaterial("G4_Galactic"), "protoWorldLog");
   auto* worldPhys = new G4PVPlacement(nullptr, {}, worldLog, "protoWorldPhys", nullptr, false, 0);
   worldLog->SetVisAttributes(fVisWorld);
 
-  const G4double hxEnv = kHxWide + kAirGap + kFoilT + kEnvMarginXY;
   const G4double hzEnvThin = kHzThin + kAirGap + kFoilT + kEnvMarginZ;
-  // Tessellated LG tip is a circle of radius kRguide in local x-z; mother must cover ±kRguide in z.
   const G4double hzEnv = std::max(hzEnvThin, kRguide + kEnvMarginZ);
-  const G4double hyExtentUp = kHyLong + kAirGap + kFoilT;
-  const G4double hyExtentDown = kHyLong + kLGZGap + kLguide + kSiPMH;
-  const G4double hyEnv = std::max(hyExtentUp, hyExtentDown) + kEnvMarginXY;
 
-  // Env centers: hzEnv must cover LG (±kRguide in z); spacing hzEnv + gap/2 avoids T1/T2 env overlap.
-  // Scintillator centers are placed at ±kEnvZHalfSep (same as env centers) — no local z shift (shift would push LG past mother).
-  // Effective gap between scint inner faces = 2*kEnvZHalfSep - 2*kHzThin (>> 1 mm if kRguide ~ LG tip radius).
-  const G4double kEnvZHalfSep = hzEnv + 0.5 * kGapBetweenEnvBoxes;
+  // Half the z distance between T1 and T2 tile (scint) centers: |kZTrig2 - kZTrig1| = 2 * kEnvZHalfSep.
+  const G4double kEnvZHalfSep = 0.5 * kTrig12TileCenterSeparationZ;
 
-  // One outer air envelope (protoOuterAirEnv) fully contains both trigger env placements.
-  const G4double outerHx = std::max(hxEnv, hyEnv) + kOuterAirSafetyMargin;
-  const G4double outerHy = std::max(hxEnv, hyEnv) + kOuterAirSafetyMargin;
-  const G4double outerHz = kEnvZHalfSep + hzEnv + kOuterAirSafetyMargin;
-
-  /** World +z shift so T1/T2 (centers at ±kEnvZHalfSep inside outer) both lie in z>0; avoids straddling z=0. */
+  /** Same absolute z positions as before (outer at kProtoAssemblyZ0, env at ±kEnvZHalfSep). World is vacuum (G4_Galactic). */
   const G4double kProtoAssemblyZ0 = kEnvZHalfSep + hzEnv + kOuterAirSafetyMargin;
+  const G4double kZTrig1 = kProtoAssemblyZ0 - kEnvZHalfSep;
+  const G4double kZTrig2 = kProtoAssemblyZ0 + kEnvZHalfSep;
 
-  auto* envSolid = new G4Box("protoAirEnv", hxEnv, hyEnv, hzEnv);
-  auto* envLog = new G4LogicalVolume(envSolid, FindMaterial("G4_AIR"), "protoAirEnvLog");
+  G4RotationMatrix rotTrig2;
+  rotTrig2.rotateZ(halfpi);
 
-  auto* outerEnvSolid = new G4Box("protoOuterAirEnv", outerHx, outerHy, outerHz);
-  auto* outerEnvLog = new G4LogicalVolume(outerEnvSolid, FindMaterial("G4_AIR"), "protoOuterAirEnvLog");
-  new G4PVPlacement(nullptr, G4ThreeVector(0., 0., kProtoAssemblyZ0), outerEnvLog, "protoOuterAirEnvPhys", worldLog,
-                    false, 0);
-  outerEnvLog->SetVisAttributes(fVisWorld);
+  auto trWorld1 = [&](const G4Transform3D& localInAssembly) {
+    return G4Transform3D(G4RotationMatrix(), G4ThreeVector(0., 0., kZTrig1)) * localInAssembly;
+  };
+  auto trWorld2 = [&](const G4Transform3D& localInAssembly) {
+    return G4Transform3D(rotTrig2, G4ThreeVector(0., 0., kZTrig2)) * localInAssembly;
+  };
 
   auto* scintSolid = new G4Box("protoScint", kHxWide, kHyLong, kHzThin);
   auto* scintLog =
       new G4LogicalVolume(scintSolid, FindMaterial("Polystyrene"), "protoScintLog");
-  new G4PVPlacement(nullptr, {}, scintLog, "protoScintPhys", envLog, false, 0);
+  new G4PVPlacement(trWorld1(G4Transform3D()), scintLog, "protoScintPhys", worldLog, false, 0);
+  new G4PVPlacement(trWorld2(G4Transform3D()), scintLog, "protoScintPhys", worldLog, false, 1);
   scintLog->SetVisAttributes(fVisScint);
 
   G4TessellatedSolid* lgSolid = BuildLightGuideTessellated();
   auto* lgLog =
       new G4LogicalVolume(lgSolid, FindMaterial("ProtoLG_MatchScint"), "protoLightGuideLog");
-  new G4PVPlacement(nullptr, {}, lgLog, "protoLightGuidePhys", envLog, false, 0);
+  auto* lgPV1 = new G4PVPlacement(trWorld1(G4Transform3D()), lgLog, "protoLightGuidePhys", worldLog, false, 0);
+  auto* lgPV2 = new G4PVPlacement(trWorld2(G4Transform3D()), lgLog, "protoLightGuidePhys", worldLog, false, 1);
   lgLog->SetVisAttributes(fVisLG);
 
   // SiPM: G4Tubs on z; rotateX(-90°) maps local +z to world +y (window toward LG at +y).
@@ -283,33 +270,32 @@ G4VPhysicalVolume* CBDsimDetectorConstructionProto::Construct() {
   foilYpLog->SetVisAttributes(fVisFoil);
   new G4LogicalSkinSurface("protoAlSurfYp", foilYpLog, FindSurface("AluminumSurf"));
 
-  new G4PVPlacement(G4Transform3D(sipmRot, G4ThreeVector(0., ySipmCenter, 0.)), sipmEnvLog, "protoSipmEnvPhys",
-                    envLog, false, 0);
-  new G4PVPlacement(nullptr, {-xh, 0., 0.}, foilXmLog, "protoFoilXmPhys", envLog, false, 0);
-  new G4PVPlacement(nullptr, {xh, 0., 0.}, foilXpLog, "protoFoilXpPhys", envLog, false, 0);
-  new G4PVPlacement(nullptr, {0., 0., -zh}, foilZmLog, "protoFoilZmPhys", envLog, false, 0);
-  new G4PVPlacement(nullptr, {0., 0., zh}, foilZpLog, "protoFoilZpPhys", envLog, false, 0);
-  new G4PVPlacement(nullptr, {0., yFoilPlus, 0.}, foilYpLog, "protoFoilYpPhys", envLog, false, 0);
-
-  // Two trigger assemblies share envLog; scint centers at ±kEnvZHalfSep (see kEnvZHalfSep comment above).
-  // Trigger 2: +90° about +z vs trigger 1. Env copy numbers 0 / 1 → SiPM SD uses volume depth 2 (env) as in legacy proto.
-  auto* envPhysT1 =
-      new G4PVPlacement(nullptr, G4ThreeVector(0., 0., -kEnvZHalfSep), envLog, "protoAirEnvPhys_T1", outerEnvLog,
-                        false, 0);
-  G4RotationMatrix rotTrig2;
-  rotTrig2.rotateZ(halfpi);
-  auto* envPhysT2 = new G4PVPlacement(G4Transform3D(rotTrig2, G4ThreeVector(0., 0., kEnvZHalfSep)), envLog,
-                                        "protoAirEnvPhys_T2", outerEnvLog, false, 1);
-
-  // One border surface per env instance: navigate from each env physical volume (no parent getters; G4 API differs by version).
-  if (auto* lgPV1 = FindDaughterPVByName(envPhysT1, "protoLightGuidePhys")) {
-    new G4LogicalBorderSurface("protoLGFoilBorder_protoAirEnvPhys_T1", lgPV1, envPhysT1,
-                               FindSurface("AluminumSurf"));
+  {
+    const G4Transform3D localSipm(G4Transform3D(sipmRot, G4ThreeVector(0., ySipmCenter, 0.)));
+    new G4PVPlacement(trWorld1(localSipm), sipmEnvLog, "protoSipmEnvPhys", worldLog, false, 0);
+    new G4PVPlacement(trWorld2(localSipm), sipmEnvLog, "protoSipmEnvPhys", worldLog, false, 1);
   }
-  if (auto* lgPV2 = FindDaughterPVByName(envPhysT2, "protoLightGuidePhys")) {
-    new G4LogicalBorderSurface("protoLGFoilBorder_protoAirEnvPhys_T2", lgPV2, envPhysT2,
-                               FindSurface("AluminumSurf"));
+  {
+    const G4Transform3D tx(G4RotationMatrix(), G4ThreeVector(-xh, 0., 0.));
+    const G4Transform3D tpx(G4RotationMatrix(), G4ThreeVector(xh, 0., 0.));
+    const G4Transform3D tzm(G4RotationMatrix(), G4ThreeVector(0., 0., -zh));
+    const G4Transform3D tzp(G4RotationMatrix(), G4ThreeVector(0., 0., zh));
+    const G4Transform3D typ(G4RotationMatrix(), G4ThreeVector(0., yFoilPlus, 0.));
+    new G4PVPlacement(trWorld1(tx), foilXmLog, "protoFoilXmPhys", worldLog, false, 0);
+    new G4PVPlacement(trWorld2(tx), foilXmLog, "protoFoilXmPhys", worldLog, false, 1);
+    new G4PVPlacement(trWorld1(tpx), foilXpLog, "protoFoilXpPhys", worldLog, false, 0);
+    new G4PVPlacement(trWorld2(tpx), foilXpLog, "protoFoilXpPhys", worldLog, false, 1);
+    new G4PVPlacement(trWorld1(tzm), foilZmLog, "protoFoilZmPhys", worldLog, false, 0);
+    new G4PVPlacement(trWorld2(tzm), foilZmLog, "protoFoilZmPhys", worldLog, false, 1);
+    new G4PVPlacement(trWorld1(tzp), foilZpLog, "protoFoilZpPhys", worldLog, false, 0);
+    new G4PVPlacement(trWorld2(tzp), foilZpLog, "protoFoilZpPhys", worldLog, false, 1);
+    new G4PVPlacement(trWorld1(typ), foilYpLog, "protoFoilYpPhys", worldLog, false, 0);
+    new G4PVPlacement(trWorld2(typ), foilYpLog, "protoFoilYpPhys", worldLog, false, 1);
   }
+
+  // LG | world vacuum (protoWorldLog = G4_Galactic).
+  new G4LogicalBorderSurface("protoLGFoilBorder_protoWorldPhys_T1", lgPV1, worldPhys, FindSurface("AluminumSurf"));
+  new G4LogicalBorderSurface("protoLGFoilBorder_protoWorldPhys_T2", lgPV2, worldPhys, FindSurface("AluminumSurf"));
 
   return worldPhys;
 }

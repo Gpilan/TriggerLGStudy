@@ -12,6 +12,7 @@
 #include "TH2Poly.h"
 #include "TH3.h"
 #include "TMath.h"
+#include "TFile.h"
 #include <sstream>
 
 
@@ -46,26 +47,10 @@ int main(int argc, char* argv[]){
   //std::cout<<"11"<<std::endl;
 
   TH1F* tTurnOnTime = new TH1F("risetime","risetime;t(ns);evt",24000,0,240);
-  TH1F* tTurnOnTimefront = new TH1F("risetimefront","risetimefront;t(ns);evt",24000,0,240);
 
   TH2I *tsipmXY = new TH2I("sipmXY","sipmXY;X;Y",30,0,30,30,0,30);
-  TH2I *tsipmXYfront = new TH2I("sipmXYfront","sipmXY;X;Y",30,0,30,30,0,30);
 
   TH2F *tXYriseTime = new TH2F("XYturnontime","turn on time by sipm;X;Y",30,0,30,30,0,30);
-  TH2F *tXYriseTimefront = new TH2F("XYturnontimefront","turn on time by front-sipm;X;Y",30,0,30,30,0,30);
-
-
-  TH1F* tTfront = new TH1F("time_front","time(front);ns;p.e.",700,0,7);
-  tTfront->Sumw2(); tTfront->SetLineColor(kBlue); tTfront->SetLineWidth(2);
-
-  TH1F* tWavfront = new TH1F("wavlen_front","wavelength(front);nm;p.e.",60,300.,900.);
-  tWavfront->Sumw2(); tWavfront->SetLineColor(kRed); tWavfront->SetLineWidth(2);
-
-  TH1F* tNhitfront = new TH1F("nHits_front","Number of p.e./SiPM(front);p.e.;n",200,0.,2000.);
-  tNhitfront->Sumw2(); tNhitfront->SetLineColor(kRed); tNhitfront->SetLineWidth(2);
-
-  TH1I* thitsfront = new TH1I("p.e._front","p.e./evt(front);p.e.;evt",100,0,1500);thitsfront->Sumw2(); thitsfront->SetLineColor(kBlack); thitsfront->SetLineWidth(2);
-  //std::cout<<"11"<<std::endl;
 
   TH1F* tenergy = new TH1F("energy detected", "energy detected;MeV;evt",60,low,high);
 
@@ -78,9 +63,7 @@ int main(int argc, char* argv[]){
   TH2I* genelectron2D = new TH2I("2Dgenelectron","generated electron;x;y",30,0,30,30,0,30);
   TH2I* genpositron2D = new TH2I("2Dgenppositron","generated positron;x;y",30,0,30,30,0,30);
   TH1F* risetimesipm = new TH1F("","1sipm;t(ns);p.e.",24000,0,240);
-  TH1F* risetimesipmfront = new TH1F("","1sipm;t(ns);p.e.",24000,0,240);
 
-  TH1F* ratio_fired_ele_front = new TH1F("ratio fired ele front","num of fired SiPM / num of cells include ele;ratio;evt",25,0,25);
   TH1F* ratio_fired_ele = new TH1F("ratio fired ele","num of fired SiPM / num of cells include ele;ratio;evt",25,0,25);
 
 
@@ -101,15 +84,12 @@ int main(int argc, char* argv[]){
     CBDsimInterface::CBDsimEventData cbdEvt;
     cbdInterface->read(cbdEvt);
     int nhit=0;
-    int nhitfront=0;
     int fired_sipm =0;
-    int fired_sipm_front =0;
     float energy=0;
 
     float Edep =0;
 
     TH1F* turnontime= new TH1F("","1MeV 1evt;t(ns);p.e.",24000,0,240);
-    TH1F* turnontimefront= new TH1F("","1MeV 1evt;t(ns);p.e.",24000,0,240);
     int i_evt=(cbdInterface->numEvt()-1);
     std::stringstream ss_evt;
     ss_evt<<i_evt;
@@ -119,7 +99,10 @@ int main(int argc, char* argv[]){
       Edep += edep.Edep;
     }
     tEdep->Fill(Edep);
-    for (auto tower: cbdEvt.towers){
+    {
+      const CBDsimInterface::CBDsimTowerData* towers[] = {&cbdEvt.towerT1, &cbdEvt.towerT2};
+      for (const auto* ptw : towers) {
+        const auto& tower = *ptw;
       for (auto sipm:tower.SiPMs){
         tsipmXY->Fill(sipm.x,sipm.y,sipm.count);
         tNhit->Fill(sipm.count);
@@ -141,27 +124,6 @@ int main(int argc, char* argv[]){
           risetimesipm->Reset();
         }
       }
-      for (auto sipmfront:tower.SiPMFronts){
-        tsipmXYfront->Fill(sipmfront.x,sipmfront.y,sipmfront.count);
-        tNhitfront->Fill(sipmfront.count);
-        int hit = sipmfront.count;
-        energy2D->Fill(sipmfront.x,sipmfront.y,sipmfront.count*0.00031858);
-        nhitfront+=hit;
-        fired_sipm_front+=1;
-        for (const auto timepair:sipmfront.timeStruct){
-          tTfront->Fill(timepair.first.first+0.005,timepair.second);
-          turnontimefront->Fill(timepair.first.first+0.005,timepair.second);
-          if(cbdInterface->numEvt()==982)risetimesipmfront->Fill(timepair.first.first+0.005,timepair.second);
-        }
-        for (const auto wavpair: sipmfront.wavlenSpectrum){
-          tWavfront->Fill(wavpair.first.first,wavpair.second);
-        }
-        if(cbdInterface->numEvt()==982){
-
-          int risetimesipmbinfront=risetimesipmfront->FindFirstBinAbove(0.5);
-          if(Edep!=0) tXYriseTimefront->Fill(sipmfront.x,sipmfront.y,risetimesipmfront->GetBinCenter(risetimesipmbinfront));
-          risetimesipmfront->Reset();
-        }
       }
     }
     for (auto physical:cbdEvt.totPhysicals){
@@ -189,19 +151,15 @@ int main(int argc, char* argv[]){
     }
     energyFile->WriteTObject(energy2D);
     ratio_fired_ele->Fill((float)fired_sipm/num_ele_cell);
-    ratio_fired_ele_front->Fill((float)fired_sipm_front/num_ele_cell);
     tothit+=nhit;
     totenergy+=energy;
     thits->Fill(nhit);
-    thitsfront->Fill(nhitfront);
-    if(Edep!=0)thitstotal->Fill(nhitfront+nhit);
-    if(Edep!=0) tenergy->Fill((nhit+nhitfront)*0.000333838);//21.07.20 calib const 0.00033838 with barrier 0.00031858
+    if(Edep!=0)thitstotal->Fill(nhit);
+    if(Edep!=0) tenergy->Fill(nhit*0.000333838);//21.07.20 calib const 0.00033838 with barrier 0.00031858
     //onecell 0.000333501 total 0.000322373
    
     int risetimebin=turnontime->FindFirstBinAbove(0.5);
     if(Edep!=0) tTurnOnTime->Fill(turnontime->GetBinCenter(risetimebin));
-    int risetimebinfront=turnontimefront->FindFirstBinAbove(0.5);
-    if(Edep!=0) tTurnOnTimefront->Fill(turnontimefront->GetBinCenter(risetimebinfront));
 
   }
   energyFile->Close();
@@ -211,14 +169,12 @@ int main(int argc, char* argv[]){
   tenergy->Fit(genergy,"R+");
 
   tXYriseTime->SetStats(kFALSE);
-  tXYriseTimefront->SetStats(kFALSE);
 
   thitstotal->Fit(g_calib,"R");
   gStyle->SetOptFit();
  
   thitstotal->Draw("Hist");g_calib->Draw("same");c->SaveAs(filename+"_totalp.e._total.png");
   tTurnOnTime->Draw("Hist");c->SaveAs(filename+"_risetime.png");
-  tTurnOnTimefront->Draw("Hist");c->SaveAs(filename+"_risetime_front.png");
 
   tenergy->Draw("Hist"); genergy->Draw("same"); c->SaveAs(filename+"_energy.png");
   tEdep->Draw("Hist"); c->SaveAs(filename+"_Edep.png");
@@ -226,23 +182,16 @@ int main(int argc, char* argv[]){
   tWav->Draw("Hist"); c->SaveAs(filename+"_wav.png");
   tNhit->Draw("Hist"); c->SaveAs(filename+"_hit.png");
   thits->Draw("Hist");  c->SaveAs(filename+"_totalp.e._back.png");
-  tTfront->Draw("Hist"); c->SaveAs(filename+"_t_front.png");
-  tWavfront->Draw("Hist"); c->SaveAs(filename+"_wav_front.png");
-  tNhitfront->Draw("Hist"); c->SaveAs(filename+"_hit_front.png");
-  thitsfront->Draw("Hist");  c->SaveAs(filename+"_totalp.e._front.png");
   genparticle2D->Draw("COL");c->SaveAs(filename+"_XY_gen.png");
   gengamma2D->Draw("COL");c->SaveAs(filename+"_XY_gamma.png");
   genelectron2D->Draw("COL");c->SaveAs(filename+"_XY_electron.png");
   genpositron2D->Draw("COL");c->SaveAs(filename+"_XY_positron.png");
   tXYriseTime->Draw("COLZ");c->SaveAs(filename+"_TOtimesipm.png");
-  tXYriseTimefront->Draw("COLZ");c->SaveAs(filename+"_TOtimesipmfront.png");
   ratio_fired_ele->Draw("hist");c->SaveAs(filename+"_numOfFiredSiPM.png");
-  ratio_fired_ele_front->Draw("hist");c->SaveAs(filename+"_numOfFiredSiPMfront.png");
 
 
   TFile* riseFile = new TFile(filename+"_risetime0.5.root","RECREATE");
   riseFile->WriteTObject(tTurnOnTime);
-  riseFile->WriteTObject(tTurnOnTimefront);
   riseFile->Close();
   
 }

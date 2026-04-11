@@ -10,14 +10,13 @@ class G4LogicalVolume;
 
 /**
  * Prototype geometry (trigger/LG study): plastic scint slab + tessellated light guide.
- * Beam along +z crosses the thin (5 mm) z extent; air envelope + Al foil
+ * Beam along +z crosses the thin (5 mm) z extent; world is vacuum (G4_Galactic); Al foil
  * on scint; LG on the 40x5 mm face (normal -y), extending to -y; SiPM at LG tip (axis y).
  * readout face (same SD naming as legacy back plane). Units: mm.
  *
- * Two triggers share protoAirEnvLog, placed inside one outer air volume (protoOuterAirEnvLog)
- * sized to contain both (T2 is Rz(+90 deg)); optional safety margin on that outer box.
- * Two placements of shared protoAirEnvLog; env centers at +/-(hzEnv + gap/2). Scint centers match env centers.
- * Effective gap between scint inner faces = 2*kEnvZHalfSep - 2*kHzThin (large vs 1 mm — required for LG in mother).
+ * Only the world logical volume is G4_Galactic; two trigger assemblies (shared LVs, copy 0/1) are placed
+ * directly in the world (T2 is Rz(+90 deg)). Along world z, the gap between the two scintillator slabs
+ * is kTrig12TileFaceGapZ (1 mm); center separation is 2*kHzThin + that gap so tiles do not overlap.
  *
  * Switch in CBDsim.cc: use this class instead of CBDsimDetectorConstruction.
  */

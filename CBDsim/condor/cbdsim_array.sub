@@ -1,0 +1,33 @@
+# HTCondor: CBDsim 여러 시드 동시 실행 (경북대 T3 예시는 https://t2-cms.knu.ac.kr/index.php/HTCondor )
+#
+# 사용 전:
+#   1) 로그인 노드에서 Trigger 루트로 이동
+#   2) CBDsim 빌드 완료 (build/CBDsim/CBDsim 존재)
+#   3) 아래 executable 을 본인 경로로 수정하거나, condor_submit 시 -append 로 덮어쓰기
+#   4) queue 개수 = 시드 / job 수
+#
+#   condor_submit cbdsim_array.sub
+#   condor_q
+#
+
+universe                = vanilla
+executable              = /CHANGEME/Trigger/CBDsim/condor/run_cbdsim.sh
+arguments               = $(Process)
+
+should_transfer_files   = NO
+getenv                  = True
+
+log                     = logs/cbdsim_$(Cluster).log
+output                  = logs/cbdsim_$(Cluster).$(Process).out
+error                   = logs/cbdsim_$(Cluster).$(Process).err
+
+request_cpus            = 1
+request_memory          = 4 GB
+
+# 필요 시 (사이트 정책):
+# +JobType = "short"
+
+# MACRO=run_gamma.mac 처럼 바꾸려면:
+# environment = "MACRO=run_gamma.mac"
+
+queue 10

@@ -9,6 +9,25 @@
 namespace { G4Mutex CBDsimPrimaryGeneratorActionMutex = G4MUTEX_INITIALIZER; }
 int CBDsimPrimaryGeneratorAction::sNumEvt = 0;
 G4ThreadLocal int CBDsimPrimaryGeneratorAction::sIdxEvt = 0;
+G4ThreadLocal G4double CBDsimPrimaryGeneratorAction::sLastPrimaryEkin = 0.;
+G4ThreadLocal G4double CBDsimPrimaryGeneratorAction::sLastPrimaryVx = 0.;
+G4ThreadLocal G4double CBDsimPrimaryGeneratorAction::sLastPrimaryVy = 0.;
+G4ThreadLocal G4double CBDsimPrimaryGeneratorAction::sLastPrimaryVz = 0.;
+G4ThreadLocal G4double CBDsimPrimaryGeneratorAction::sLastPrimaryDirX = 0.;
+G4ThreadLocal G4double CBDsimPrimaryGeneratorAction::sLastPrimaryDirY = 0.;
+G4ThreadLocal G4double CBDsimPrimaryGeneratorAction::sLastPrimaryDirZ = 1.;
+
+void CBDsimPrimaryGeneratorAction::GetLastPrimaryKinematics(G4double& ekinMeV, G4double& vx, G4double& vy,
+                                                            G4double& vz, G4double& dx, G4double& dy,
+                                                            G4double& dz) {
+  ekinMeV = sLastPrimaryEkin;
+  vx = sLastPrimaryVx;
+  vy = sLastPrimaryVy;
+  vz = sLastPrimaryVz;
+  dx = sLastPrimaryDirX;
+  dy = sLastPrimaryDirY;
+  dz = sLastPrimaryDirZ;
+}
 
 CBDsimPrimaryGeneratorAction::CBDsimPrimaryGeneratorAction(G4int seed)
 : G4VUserPrimaryGeneratorAction() {
@@ -57,6 +76,17 @@ void CBDsimPrimaryGeneratorAction::GeneratePrimaries(G4Event* evt) {
 
   G4AutoLock lock(&CBDsimPrimaryGeneratorActionMutex);
   fParticleGun->GeneratePrimaryVertex(evt);
+  sLastPrimaryEkin = fParticleGun->GetParticleEnergy();
+  sLastPrimaryVx = fOrigin.x() / mm;
+  sLastPrimaryVy = fOrigin.y() / mm;
+  sLastPrimaryVz = fOrigin.z() / mm;
+  {
+    G4ThreeVector d = fDirection;
+    if (d.mag2() > 0.) d = d.unit();
+    sLastPrimaryDirX = d.x();
+    sLastPrimaryDirY = d.y();
+    sLastPrimaryDirZ = d.z();
+  }
   sIdxEvt = sNumEvt;
   sNumEvt++;
 }

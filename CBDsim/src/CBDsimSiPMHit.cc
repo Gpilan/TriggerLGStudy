@@ -9,7 +9,6 @@ fSiPMnum(-1),
 fTowernum(-1),
 fX(-1),
 fY(-1),
-fFront(0),
 fTowerX(-1),
 fTowerY(-1),
 fWavBin(wavBin),
@@ -25,7 +24,6 @@ CBDsimSiPMHit::CBDsimSiPMHit(const CBDsimSiPMHit &right)
   fTowernum = right.fTowernum;
   fX = right.fX;
   fY = right.fY;
-  fFront=right.fFront;
   fTowerX = right.fTowerX;
   fTowerY = right.fTowerY;
   fTimeStruct = right.fTimeStruct;
@@ -39,7 +37,6 @@ const CBDsimSiPMHit& CBDsimSiPMHit::operator=(const CBDsimSiPMHit &right) {
   fTowernum = right.fTowernum;
   fX = right.fX;
   fY = right.fY;
-  fFront = right.fFront;
   fTowerX = right.fTowerX;
   fTowerY = right.fTowerY;
   fTimeStruct = right.fTimeStruct;
@@ -49,7 +46,7 @@ const CBDsimSiPMHit& CBDsimSiPMHit::operator=(const CBDsimSiPMHit &right) {
 }
 
 G4bool CBDsimSiPMHit::operator==(const CBDsimSiPMHit &right) const {
-  return (fSiPMnum==right.fSiPMnum && fTowernum==right.fTowernum && fFront==right.fFront);
+  return (fSiPMnum==right.fSiPMnum && fTowernum==right.fTowernum);
 }
 
 void CBDsimSiPMHit::CountWavlenSpectrum(CBDsimInterface::hitRange range) {

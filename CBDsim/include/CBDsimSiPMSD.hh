@@ -18,12 +18,10 @@ public:
   virtual void Initialize(G4HCofThisEvent* HCE);
   virtual G4bool ProcessHits(G4Step* aStep, G4TouchableHistory*);
   virtual void EndOfEvent(G4HCofThisEvent* HCE);
-  void IsFrontFunction(){fIsFront=1;}
 
 private:
   CBDsimSiPMHitsCollection* fHitCollection;
   G4int fHCID;
-  G4int fIsFront;
   std::pair<int,int> fTowerXY;
   G4int fWavBin;
   G4int fTimeBin;

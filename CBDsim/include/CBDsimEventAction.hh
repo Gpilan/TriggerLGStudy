@@ -23,8 +23,6 @@ public:
   //void fillVexs(CBDsimInterface::CBDsimVertax& vexData);
 
 private:
-  std::vector<G4int> fSiPMCID;
-
   void clear();
   void fillHits(CBDsimSiPMHit* hit);
   void queue();

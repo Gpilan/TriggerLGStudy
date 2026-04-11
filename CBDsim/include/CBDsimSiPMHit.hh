@@ -34,10 +34,6 @@ public:
   G4int GetTowerY() const { return fTowerY; }
   void SetTowerY(G4int n) { fTowerY = n; }
 
-  G4int GetIsFront() {return fFront;}
-  void SetFront() {fFront=1;}
-
-
   void photonCount() { fPhotons++; }
   G4int GetPhotonCount() const { return fPhotons; }
 
@@ -52,7 +48,6 @@ private:
   G4int fTowernum;
   G4int fX;
   G4int fY;
-  G4int fFront;
   G4int fTowerX;
   G4int fTowerY;
   CBDsimInterface::CBDsimWavlenSpectrum fWavlenSpectrum;

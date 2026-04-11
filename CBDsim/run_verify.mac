@@ -1,0 +1,15 @@
+# 검증용 짧은 런 — ROOT 필드·트리거 확인용
+#This macro can not be executed standalone
+/vis/disable
+/run/numberOfThreads 1
+/run/initialize
+/run/verbose 1
+
+/CBDsim/generator/y0 0 cm
+/CBDsim/generator/z0 0 cm
+/CBDsim/generator/randx 2 mm
+/CBDsim/generator/randy 2 mm
+
+/gun/particle e-
+/gun/energy 500 MeV
+/run/beamOn 10

@@ -1,0 +1,20 @@
+# 최소 배치: mu- 1개, 10 MeV, 스레드 1, vis 끔
+# 실행: 이 .mac 이 있는 디렉터리에서
+#   ./CBDsim run_muon_10mev_minimal.mac
+# 또는 (cwd/다른 호스트에서 파일 못 찾을 때):
+#   ./CBDsim /절대경로/Trigger/CBDsim/run_muon_10mev_minimal.mac
+# ROOT까지: ./CBDsim run_muon_10mev_minimal.mac 0 out.root
+
+/control/verbose 1
+/run/verbose 1
+/vis/disable
+/run/numberOfThreads 1
+/run/initialize
+
+/gun/particle mu-
+/gun/energy 10 MeV
+# Proto 빔은 +z 가 얇은 축 관통; 스질 쪽으로 들어가게 -z 에서 쏨
+/gun/position 0 0 -500 mm
+/gun/direction 0 0 1
+
+/run/beamOn 1

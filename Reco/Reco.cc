@@ -15,26 +15,20 @@ int main(int argc, char* argv[]) {
     CBDsimInterface::CBDsimEventData evt;
     drInterface->read(evt);
 
-    for (auto towerItr = evt.towers.begin(); towerItr != evt.towers.end(); ++towerItr) {
-      auto tower = *towerItr;
-
-      // do something on the tower
-      std::cout << "Tower num = " << tower.towerNum << std::endl;
-
-      for (auto sipmItr = tower.SiPMs.begin(); sipmItr != tower.SiPMs.end(); ++sipmItr) {
-        auto sipm = *sipmItr;
-
-        // do something on the sipm
-        std::cout << "SiPM num = " << sipm.SiPMnum << " | Count = " << sipm.count << std::endl;
-
-      } // sipm loop
-    } // tower loop
+    auto dumpTower = [](const char* label, const CBDsimInterface::CBDsimTowerData& tower) {
+      std::cout << label << " triggerNum = " << tower.triggerNum << std::endl;
+      for (const auto& sipm : tower.SiPMs) {
+        std::cout << "  SiPM num = " << sipm.SiPMnum << " | Count = " << sipm.count << std::endl;
+      }
+    };
+    dumpTower("towerT1 (T1)", evt.towerT1);
+    dumpTower("towerT2 (T2)", evt.towerT2);
 
     for (auto edepItr = evt.Edeps.begin(); edepItr != evt.Edeps.end(); ++edepItr) {
       auto edep = *edepItr;
 
       // do something on the Edeps
-      std::cout << "Tower num = " << edep.towerNum << " | Edep = " << edep.Edep << " (MeV)" << std::endl;
+      std::cout << "Trigger num = " << edep.triggerNum << " | Edep = " << edep.Edep << " (MeV)" << std::endl;
     }
   } // event loop
 

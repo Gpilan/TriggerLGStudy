@@ -29,6 +29,15 @@ public:
 
   static G4ThreadLocal int sIdxEvt;
   static int sNumEvt;
+  static G4ThreadLocal G4double sLastPrimaryEkin;
+  static G4ThreadLocal G4double sLastPrimaryVx;
+  static G4ThreadLocal G4double sLastPrimaryVy;
+  static G4ThreadLocal G4double sLastPrimaryVz;
+  static G4ThreadLocal G4double sLastPrimaryDirX;
+  static G4ThreadLocal G4double sLastPrimaryDirY;
+  static G4ThreadLocal G4double sLastPrimaryDirZ;
+  static void GetLastPrimaryKinematics(G4double& ekinMeV, G4double& vx, G4double& vy, G4double& vz,
+                                        G4double& dx, G4double& dy, G4double& dz);
 
 private:
   void DefineCommands();

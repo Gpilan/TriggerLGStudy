@@ -66,7 +66,11 @@ set(CBDsim_SCRIPTS
   run_ele.mac
   run_ele_60gev.mac
   run_muon.mac
+  run_muon_10mev_minimal.mac
   run_gamma.mac
+  run_verify.mac
+  verify_root.C
+  verify_root_run.sh
 )
 
 foreach(_script ${CBDsim_SCRIPTS})
@@ -76,6 +80,14 @@ foreach(_script ${CBDsim_SCRIPTS})
     COPYONLY
   )
 endforeach()
+
+# ROOT 통계 산출물 보관 (빌드 트리에 stats/ 유지)
+file(MAKE_DIRECTORY "${PROJECT_BINARY_DIR}/stats")
+configure_file(
+  ${PROJECT_SOURCE_DIR}/stats/README.txt
+  ${PROJECT_BINARY_DIR}/stats/README.txt
+  COPYONLY
+)
 
 #----------------------------------------------------------------------------
 # Add program to the project targets

@@ -87,14 +87,14 @@ G4VPhysicalVolume* CBDsimDetectorConstruction::Construct() {
   G4VPhysicalVolume* worldPhysical = new G4PVPlacement(0,G4ThreeVector(),worldLogical,"worldPhysical",0,false,0);
   worldLogical->SetVisAttributes(fVisAttrTransparent);
 
-  G4VSolid* towertotalEnvSolid = new G4Box("towertotalEnvSolid",fTotalX/2.,fTotalX/2.,(fTowerH+fSiPMH*2)/2.);
+  G4VSolid* towertotalEnvSolid = new G4Box("towertotalEnvSolid",fTotalX/2.,fTotalX/2.,(fTowerH+fSiPMH)/2.);
   G4RotationMatrix* towerRot = new G4RotationMatrix(90.*deg,0.*deg,0.);
   G4LogicalVolume* towertotalEnvLogical = new G4LogicalVolume(towertotalEnvSolid,FindMaterial("G4_AIR"),"towertotalEnvLogical");
   //여기다 하나씩 배치할 것
 
   new G4PVPlacement(towerRot,G4ThreeVector(0.5*m,0,0),towertotalEnvLogical,"towertotalEnvPhysical",worldLogical,false,0);
 
-  G4VSolid* towerEnvSolid = new G4Box("towerEnvSolid",fFoilX+fAirX+fTowerX/2.,fFoilX+fAirX+fTowerX/2.,fSiPMH+fTowerH/2.);
+  G4VSolid* towerEnvSolid = new G4Box("towerEnvSolid",fFoilX+fAirX+fTowerX/2.,fFoilX+fAirX+fTowerX/2.,(fTowerH+fSiPMH)/2.);
   G4LogicalVolume* towerEnvLogical = new G4LogicalVolume(towerEnvSolid,FindMaterial("G4_AIR"),"towerEnvLogical");
 
   G4VSolid* towerSolid = new G4Box("towerSolid",fTowerX/2.,fTowerX/2.,fTowerH/2.);
@@ -103,10 +103,10 @@ G4VPhysicalVolume* CBDsimDetectorConstruction::Construct() {
 
   towerLogical->SetVisAttributes(fVisAttrBlue);
 
-  G4VSolid* foilSolid1 = new G4Box("foilSolid1",fFoilX/2.,fTowerX/2.+fAirX+fFoilX/2.,fSiPMH+fTowerH/2.);
+  G4VSolid* foilSolid1 = new G4Box("foilSolid1",fFoilX/2.,fTowerX/2.+fAirX+fFoilX/2.,(fTowerH+fSiPMH)/2.);
   G4LogicalVolume* foilLogical1 = new G4LogicalVolume(foilSolid1,FindMaterial("Aluminum"),"foilLogical1");
 
-  G4VSolid* foilSolid2 = new G4Box("foilSolid2",fTowerX/2.+fAirX+fFoilX/2.,fFoilX/2.,fSiPMH+fTowerH/2.);
+  G4VSolid* foilSolid2 = new G4Box("foilSolid2",fTowerX/2.+fAirX+fFoilX/2.,fFoilX/2.,(fTowerH+fSiPMH)/2.);
   G4LogicalVolume* foilLogical2 = new G4LogicalVolume(foilSolid2,FindMaterial("Aluminum"),"foilLogical2");
 
   G4VPhysicalVolume* foilPhysical1 = new G4PVPlacement(0,G4ThreeVector(fTowerX/2.+fFoilX/2.+fAirX,fFoilX/2.,0.),foilLogical1,"foilPhysical1",towerEnvLogical,false,0);
@@ -136,22 +136,6 @@ G4VPhysicalVolume* CBDsimDetectorConstruction::Construct() {
 
   G4VPhysicalVolume* sipmEnvPhysical = new G4PVPlacement(0,G4ThreeVector(0.,0.,(fTowerH+fSiPMH)/2.),sipmEnvLogical,"sipmEnvPhysical",towerEnvLogical,false,0);
 
-  G4VSolid* sipmEnvSolidFront = new G4Box("sipmEnvSolidFront",fSiPMX/2.,fSiPMX/2.,fSiPMH/2.);
-  G4LogicalVolume* sipmEnvLogicalFront = new G4LogicalVolume(sipmEnvSolidFront,FindMaterial("G4_Galactic"),"sipmEnvLogicalFront");
-
-  G4VSolid* waferSolidFront = new G4Box("waferSolidFront",fSiPMX/2.,fSiPMX/2.,fFilterT/2.);
-  fWaferlogicalFront = new G4LogicalVolume(waferSolidFront,FindMaterial("Silicon"),"waferLogicalFront");
-  G4VPhysicalVolume* waferPhysicalFront = new G4PVPlacement(0,G4ThreeVector(0.,0.,-(fSiPMH-fFilterT)/2.),fWaferlogicalFront,"waferPhysicalFront",sipmEnvLogicalFront,false,0);
-  G4LogicalSkinSurface* waferSurfaceFront = new G4LogicalSkinSurface("SiPMSurf",fWaferlogicalFront,FindSurface("SiPMSurf"));
-
-  fWaferlogicalFront->SetVisAttributes(fVisAttrGreen);
-
-  G4VSolid* windowSolidFront = new G4Box("windowSolidFront",fSiPMX/2.,fSiPMX/2.,(fSiPMH-fFilterT)/2.);
-  G4LogicalVolume* windowLogicalFront = new G4LogicalVolume(windowSolidFront,FindMaterial("Glass"),"windowLogicalFront");
-  G4VPhysicalVolume* windowPhysicalFront = new G4PVPlacement(0,G4ThreeVector(0.,0.,fFilterT/2.),windowLogicalFront,"windowPhysicalFront",sipmEnvLogicalFront,false,0);
-
-  G4VPhysicalVolume* sipmEnvPhysicalFront = new G4PVPlacement(0,G4ThreeVector(0.,0.,-(fTowerH+fSiPMH)/2.),sipmEnvLogicalFront,"sipmEnvPhysicalFront",towerEnvLogical,false,0);
-
   CBDsimFiberParam* fiberParam = new CBDsimFiberParam(fTowerN,fTowerN,fFiberSpec);
   G4VPVParameterisation* cellParam = new CBDsimCellParam(fiberParam);
 
@@ -167,12 +151,6 @@ void CBDsimDetectorConstruction::ConstructSDandField() {
   CBDsimSiPMSD* sipmSD = new CBDsimSiPMSD(SiPMname+"B",SiPMname+"BC",std::make_pair(fTowerN,fTowerN));
   SDman->AddNewDetector(sipmSD);
   fWaferlogical->SetSensitiveDetector(sipmSD);
-
-
-  CBDsimSiPMSD* sipmSDFront = new CBDsimSiPMSD(SiPMname+"F",SiPMname+"FC",std::make_pair(fTowerN,fTowerN));
-  sipmSDFront->IsFrontFunction();
-  SDman->AddNewDetector(sipmSDFront);
-  fWaferlogicalFront->SetSensitiveDetector(sipmSDFront);
 }
 
 fiberSpec::fiberSpec(G4double rMin_cladC_, G4double rMin_cladS_, G4double rMax_, G4double towerH_,
