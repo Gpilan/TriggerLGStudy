@@ -15,12 +15,14 @@ CBDsim ROOT에서 트리거별(T1/T2) 옵티컬 포톤 도착 시간 분포를 �
 
 기본 동작 (인자 생략 시):
   저장소 루트를 스크립트 위치에서 추정하고, `build/rootIO` 를 LD_LIBRARY_PATH 앞에 붙인 뒤
-  입력: `build/CBDsim/stats/` 안의 `An_test_1.root` (없으면 그 디렉터리의 첫 .root)
-  출력: 같은 디렉터리에 `timing_<입력파일stem>.png`
+  입력: `analysis/t_res/data/` → `build/CBDsim/stats/` → `build/CBDsim/` 순으로 검색.
+         우선 파일명 `noLG1_0.root`, 없으면 `An_test_1.root`, 없으면 해당 디렉터리의 첫 `.root`
+  출력: `analysis/t_res/figures/` 에 `timing_<입력파일stem>.png`
+  환경변수 `CBDsim_STATS` → **첫 번째** 입력 디렉터리만 덮어쓰기 (나머지 폴백은 그대로), `CBDsim_FIGURES` → PNG 출력
 
-예 (저장소 루트에서):
+예 (저장소 루트에서, Proto 지오메트리·LG 없음 가정):
   python3 analysis/plot_trigger_timing.py
-  python3 analysis/plot_trigger_timing.py build/CBDsim/60GeV_e-_LG_1.root --ref min
+  python3 analysis/plot_trigger_timing.py noLG1_0.root --ref min
 """
 
 from __future__ import annotations
@@ -45,11 +47,46 @@ def _find_repo_root() -> str | None:
     return None
 
 
-def _stats_dir(repo_root: str) -> str:
+def _data_dir(repo_root: str) -> str:
+    """기본 입력 .root 디렉터리 (`analysis/t_res/data`). `CBDsim_STATS`로 재정의."""
     env = os.environ.get("CBDsim_STATS")
     if env and os.path.isdir(env):
         return os.path.abspath(env)
+    return os.path.join(repo_root, "analysis", "t_res", "data")
+
+
+def _figures_dir(repo_root: str) -> str:
+    """기본 PNG 출력 디렉터리 (`analysis/t_res/figures`). `CBDsim_FIGURES`로 재정의."""
+    env = os.environ.get("CBDsim_FIGURES")
+    if env and os.path.isdir(env):
+        return os.path.abspath(env)
+    return os.path.join(repo_root, "analysis", "t_res", "figures")
+
+
+def _legacy_stats_dir(repo_root: str) -> str:
+    """`build/CBDsim/stats` (cmake가 만드는 통계 디렉터리)."""
     return os.path.join(repo_root, "build", "CBDsim", "stats")
+
+
+def _cbdsim_build_dir(repo_root: str) -> str:
+    """실행 파일 cwd에 생기는 .root (`build/CBDsim/`)."""
+    return os.path.join(repo_root, "build", "CBDsim")
+
+
+def _input_root_dirs(repo_root: str) -> list[str]:
+    """입력 .root 검색 순서 (중복 제거). `CBDsim_STATS`가 있으면 첫 항목만 대체."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for d in (_data_dir(repo_root), _legacy_stats_dir(repo_root), _cbdsim_build_dir(repo_root)):
+        ad = os.path.abspath(d)
+        if os.path.isdir(ad) and ad not in seen:
+            seen.add(ad)
+            out.append(ad)
+    return out
+
+
+# Proto(LG 없음) 이후 권장 접두어 산출명과 구버전 예시
+_PREFERRED_ROOT_NAMES: tuple[str, ...] = ("noLG1_0.root", "An_test_1.root")
 
 
 def _prepend_build_rootio_ld_path(repo_root: str) -> None:
@@ -64,12 +101,15 @@ def _prepend_build_rootio_ld_path(repo_root: str) -> None:
 
 
 def _default_input_root(repo_root: str) -> str | None:
-    sd = _stats_dir(repo_root)
-    preferred = os.path.join(sd, "An_test_1.root")
-    if os.path.isfile(preferred):
-        return preferred
-    roots = sorted(glob.glob(os.path.join(sd, "*.root")))
-    return roots[0] if roots else None
+    for sd in _input_root_dirs(repo_root):
+        for name in _PREFERRED_ROOT_NAMES:
+            cand = os.path.join(sd, name)
+            if os.path.isfile(cand):
+                return cand
+        roots = sorted(glob.glob(os.path.join(sd, "*.root")))
+        if roots:
+            return roots[0]
+    return None
 
 
 def _resolve_input_path(user_arg: str | None, repo_root: str) -> str | None:
@@ -77,9 +117,10 @@ def _resolve_input_path(user_arg: str | None, repo_root: str) -> str | None:
         if os.path.isfile(user_arg):
             return os.path.abspath(user_arg)
         base = os.path.basename(user_arg)
-        in_stats = os.path.join(_stats_dir(repo_root), base)
-        if os.path.isfile(in_stats):
-            return os.path.abspath(in_stats)
+        for sd in _input_root_dirs(repo_root):
+            cand = os.path.join(sd, base)
+            if os.path.isfile(cand):
+                return os.path.abspath(cand)
         under = os.path.join(repo_root, user_arg)
         if os.path.isfile(under):
             return os.path.abspath(under)
@@ -93,8 +134,7 @@ def _resolve_output_path(
     if user_out:
         return os.path.abspath(user_out)
     stem = os.path.splitext(os.path.basename(input_path))[0]
-    sd = _stats_dir(repo_root)
-    return os.path.join(sd, f"timing_{stem}.png")
+    return os.path.join(_figures_dir(repo_root), f"timing_{stem}.png")
 
 
 def _path_with_tag(path: str, tag: str) -> str:
@@ -392,7 +432,7 @@ def main() -> None:
         "input",
         nargs="?",
         default=None,
-        help="CBDsim .root (생략 시 build/CBDsim/stats/An_test_1.root 또는 그 디렉터리의 첫 .root)",
+        help="CBDsim .root (생략 시 noLG1_0.root / An_test_1.root 우선, data·stats·build/CBDsim 순 검색)",
     )
     parser.add_argument(
         "-o",
@@ -476,12 +516,16 @@ def main() -> None:
 
     input_path = _resolve_input_path(args.input, repo_root)
     if not input_path:
+        dirs = ", ".join(_input_root_dirs(repo_root))
         sys.stderr.write(
-            "입력 .root 를 찾을 수 없습니다. 파일 경로를 주거나 "
-            f"{_stats_dir(repo_root)}/ 에 .root 를 두세요.\n"
+            "입력 .root 를 찾을 수 없습니다. 경로를 직접 주거나 다음 중 한 곳에 .root 를 두세요: "
+            f"{dirs}\n"
         )
         sys.exit(1)
     output_path = _resolve_output_path(args.output, input_path, repo_root)
+    _od = os.path.dirname(output_path)
+    if _od:
+        os.makedirs(_od, exist_ok=True)
 
     # matplotlib 는 첫 import 시 폰트 캐시 등으로 수 분 걸릴 수 있음 → ROOT 루프 전에 로드
     _mpl_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".mplconfig")
@@ -558,6 +602,10 @@ def main() -> None:
         d_xmax,
     )
     h_delta.Sumw2()
+    # TFile 이 열려 있을 때 gDirectory 가 파일을 가리키면 TH1 이 파일 소유가 되어 Close() 시 삭제됨
+    h1.SetDirectory(0)
+    h2.SetDirectory(0)
+    h_delta.SetDirectory(0)
 
     skipped = [0, 0]
     skipped_delta = 0
@@ -782,8 +830,8 @@ def main() -> None:
             fig.savefig(mpl_out, dpi=150)
             print(f"저장 (matplotlib): {mpl_out}")
 
-    f.Close()
     n_dt = int(h_delta.GetEntries())
+    f.Close()
     print(
         f"  이벤트 사용: {int(nmax)} / {total_entries} "
         f"(빈 이벤트 스킵 T1={skipped[0]}, T2={skipped[1]})"

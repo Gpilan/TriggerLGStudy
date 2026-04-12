@@ -25,6 +25,7 @@ target_link_libraries(
 set(
   analysis_SCRIPTS
   plot_trigger_timing.py
+  compare_timing_resolution.py
 )
 
 foreach(_script ${analysis_SCRIPTS})

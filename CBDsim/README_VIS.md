@@ -76,3 +76,10 @@ cd CBDsim
   ```
 
 정리: **`ssh -Y knu-x11`** 로 접속하고, `DISPLAY`가 설정된 상태에서 `./CBDsim`을 실행해 보세요. 여전히 창이 안 뜨면 로컬에서 indirect GLX(위 macOS 설정) 또는 방화벽/보안 정책을 확인하면 됩니다.
+
+---
+
+## 지오메트리 (빌드 기본값)
+
+`CBDsim.cc` 의 `CBDsim_USE_PROTO_GEOMETRY` 가 1이면 **Proto 타일 + 직사각 SiPM(윈도우 스택), LG 없음** (`CBDsimDetectorConstructionProto`) 입니다.  
+ROOT 접두어 예: `./CBDsim run_ele_60gev.mac 0 noLG1` → `noLG1_0.root`. 타이밍 플롯은 `analysis/plot_trigger_timing.py` 가 `build/CBDsim/` 의 `.root` 까지 찾습니다.

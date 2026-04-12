@@ -299,7 +299,7 @@ fPWO->SetMaterialPropertiesTable(mpPWO);
   fPS->SetMaterialPropertiesTable(mpPS);
   fPS->GetIonisation()->SetBirksConstant(0.126*mm/MeV);
 
-  // Proto light guide: same bulk as PMMA; RINDEX = Polystyrene (scint) to suppress Fresnel at scint–LG boundary
+  // Legacy proto LG bulk (same as PMMA optically); current geometry does not place an LG — material kept for reuse/tests.
   G4MaterialPropertiesTable* mpProtoLGMatchScint = new G4MaterialPropertiesTable();
   mpProtoLGMatchScint->AddProperty("RINDEX", opEn, RI_PS, nEnt);
   mpProtoLGMatchScint->AddProperty("ABSLENGTH", opEn, AbsLen_PMMA, nEnt);

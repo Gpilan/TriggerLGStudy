@@ -19,7 +19,7 @@ G4int TriggerIndexFromTouchable(const G4TouchableHandle& th) {
     auto* vol = th->GetVolume(d);
     if (!vol) continue;
     const G4String& name = vol->GetName();
-    if (name == "protoScintPhys" || name == "protoLightGuidePhys" || name == "protoSipmEnvPhys") {
+    if (name == "protoScintPhys" || name == "protoSipmEnvPhys") {
       return vol->GetCopyNo();
     }
     if (name.find("protoFoil") != G4String::npos) return vol->GetCopyNo();
