@@ -124,9 +124,9 @@ G4VPhysicalVolume* CBDsimDetectorConstruction::Construct() {
   G4LogicalVolume* sipmEnvLogical = new G4LogicalVolume(sipmEnvSolid,FindMaterial("G4_Galactic"),"sipmEnvLogical");
 
   G4VSolid* waferSolid = new G4Box("waferSolid",fSiPMX/2.,fSiPMX/2.,fFilterT/2.);
-  fWaferlogical = new G4LogicalVolume(waferSolid,FindMaterial("Silicon"),"waferLogical");
+  fWaferlogical = new G4LogicalVolume(waferSolid,FindMaterial("SiPM_WaferSilicon"),"waferLogical");
   G4VPhysicalVolume* waferPhysical = new G4PVPlacement(0,G4ThreeVector(0.,0.,(fSiPMH-fFilterT)/2.),fWaferlogical,"waferPhysical",sipmEnvLogical,false,0);
-  G4LogicalSkinSurface* waferSurface = new G4LogicalSkinSurface("SiPMSurf",fWaferlogical,FindSurface("SiPMSurf"));
+  // SiPM wafer: no skin surface (bulk Si optical props; see SiPM_WaferSilicon in CBDsimMaterials).
 
   fWaferlogical->SetVisAttributes(fVisAttrGreen);
 

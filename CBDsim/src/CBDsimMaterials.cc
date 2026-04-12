@@ -71,7 +71,8 @@ void CBDsimMaterials::CreateMaterials() {
 
   fAl = new G4Material("Aluminum",z=13,a=26.982*g/mole,density=2.70*g/cm3);
   fCu = new G4Material("Copper", z=29., a=63.546*g/mole, density=8.96*g/cm3);
-  fSi = new G4Material("Silicon", z=14., a=28.09*g/mole, density=2.33*g/cm3);
+  // Unique name: NIST/FindOrBuildMaterial("Silicon") can resolve to a different G4Material without our MPT.
+  fSi = new G4Material("SiPM_WaferSilicon", z=14., a=28.09*g/mole, density=2.33*g/cm3);
 
   fVacuum = G4Material::GetMaterial("G4_Galactic");
   fAir = G4Material::GetMaterial("G4_AIR");
@@ -312,13 +313,33 @@ fPWO->SetMaterialPropertiesTable(mpPWO);
   mpGlass->AddProperty("ABSLENGTH",opEn,Abslength_Glass,nEnt);
   fGlass->SetMaterialPropertiesTable(mpGlass);
 
-  G4double refl_SiPM[nEnt]; std::fill_n(refl_SiPM, nEnt, 0.);
+  // SiPM wafer bulk: RINDEX + short ABSLENGTH so optical photons enter Silicon and absorb in-volume.
+  // (Skin-surface EFFICIENCY on dielectric_metal kills photons at the boundary without a step in Si,
+  //  so SiPMSD::ProcessHits never ran.) Detection is modeled by bulk absorption, not surface QE.
+  G4MaterialPropertiesTable* mpSiBulk = new G4MaterialPropertiesTable();
+  G4double RI_Si[nEnt];
+  std::fill_n(RI_Si, nEnt, 3.8);
+  G4double Abslength_Si[nEnt];
+  std::fill_n(Abslength_Si, nEnt, 50. * um);
+  mpSiBulk->AddProperty("RINDEX", opEn, RI_Si, nEnt);
+  mpSiBulk->AddProperty("ABSLENGTH", opEn, Abslength_Si, nEnt);
+  fSi->SetMaterialPropertiesTable(mpSiBulk);
+
+  G4double refl_SiPM[nEnt];
+  std::fill_n(refl_SiPM, nEnt, 0.);
+
+  // 표면 EFFICIENCY(QE): 나중에 복구 시 참고. 지금은 mpSiBulk 체내 흡수로 SD 스텝을 쓰므로 0.
+  // 복구 방법은 다를 수 있음(경계 검출만 켜면 SD ProcessHits와 안 맞을 수 있어 Stepping/별도 HC 등 검토).
+  /*
   G4double eff_SiPM[nEnt] = {
     0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.10,
     0.11, 0.13, 0.15, 0.17, 0.19, 0.20, 0.22, 0.23,
     0.24, 0.25, 0.24, 0.23, 0.21, 0.20, 0.17, 0.14, 0.10
   };
-  // G4double eff_SiPM[nEnt]; std::fill_n(eff_SiPM, nEnt, 1.);
+  */
+  G4double eff_SiPM[nEnt];
+  std::fill_n(eff_SiPM, nEnt, 0.);
+
   mpSiPM = new G4MaterialPropertiesTable();
   mpSiPM->AddProperty("REFLECTIVITY",opEn,refl_SiPM,nEnt);
   mpSiPM->AddProperty("EFFICIENCY",opEn,eff_SiPM,nEnt);

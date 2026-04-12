@@ -229,10 +229,10 @@ G4VPhysicalVolume* CBDsimDetectorConstructionProto::Construct() {
 
   auto* sipmWaferS = new G4Tubs("protoSipmWafer", 0., kRguide, kFilterT * 0.5, 0., twopi);
   auto* sipmWaferLog =
-      new G4LogicalVolume(sipmWaferS, FindMaterial("Silicon"), "protoSipmWaferLog");
+      new G4LogicalVolume(sipmWaferS, FindMaterial("SiPM_WaferSilicon"), "protoSipmWaferLog");
   new G4PVPlacement(nullptr, {0., 0., -(kSiPMH - kFilterT) * 0.5}, sipmWaferLog, "protoSipmWaferPhys",
                     sipmEnvLog, false, 0);
-  new G4LogicalSkinSurface("protoSiPMSurf", sipmWaferLog, FindSurface("SiPMSurf"));
+  // No LogicalSkinSurface on wafer: glass|Si uses bulk RINDEX; dielectric_metal skin was fighting SD steps.
   sipmWaferLog->SetVisAttributes(fVisSiPM);
   fProtoWaferLog = sipmWaferLog;
 
@@ -293,9 +293,11 @@ G4VPhysicalVolume* CBDsimDetectorConstructionProto::Construct() {
     new G4PVPlacement(trWorld2(typ), foilYpLog, "protoFoilYpPhys", worldLog, false, 1);
   }
 
-  // LG | world vacuum (protoWorldLog = G4_Galactic).
-  new G4LogicalBorderSurface("protoLGFoilBorder_protoWorldPhys_T1", lgPV1, worldPhys, FindSurface("AluminumSurf"));
-  new G4LogicalBorderSurface("protoLGFoilBorder_protoWorldPhys_T2", lgPV2, worldPhys, FindSurface("AluminumSurf"));
+  // Do NOT attach LogicalBorderSurface(LG, world) with reflective AluminumSurf: it applies to every
+  // LG|vacuum face, including the tessellated tip opening toward SiPM — optical photons then reflect
+  // back into the LG and never reach the SiPM window. Foil is modeled by protoFoil* skin surfaces;
+  // for a fully light-tight wrap without blocking the tip, split the LG solid or use facet-specific
+  // surfaces (future work).
 
   return worldPhys;
 }

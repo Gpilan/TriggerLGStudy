@@ -2,10 +2,14 @@
 """
 CBDsim ROOT에서 트리거별(T1/T2) 옵티컬 포톤 도착 시간 분포를 그립니다.
 
+- 막대: **에러바 없음** (HIST만). Δt 패널은 **가우시안 피팅**으로 σ 추출(ROOT: `Fit("gaus")`, mpl: `scipy.optimize.curve_fit`, 없으면 RMS만 표시).
+- 패널 우상단(matplotlib): N, μ±σ_μ, σ(RMS 또는 Gauss σ) (ns).
+- **세 번째 패널**: 이벤트마다 빈 중심 가중 평균 도착시각 ⟨t⟩(절대 ns)을 T1/T2 각각 구한 뒤 **⟨t⟩_T1 − ⟨t⟩_T2** 를 한 점으로 두고 **이벤트 수**를 쌓은 히스토그램 (y ≥ 0).
+- **`--style`**: `matplotlib` | `root` | `both`(기본) — ROOT는 통상 스타일(OptStat, HIST E1)로 3패널 저장.
+
 - 우선 이벤트 단위 합산 `timeMergedCountsTrig0/1` (+ edge 벡터) 사용.
 - 비어 있으면 `towerT1`/`towerT2`의 SiPM `timeBin*`를 C++과 같이 채널 합산.
 - 이벤트마다 기준 시간 t_ref를 빼서 분포를 가운데(0 근처)에 맞춥니다 (기본: 가중 평균).
-- 모든 이벤트를 합친 히스토그램에 대해 가중 mean·std(RMS)·총 광자 수 N을 플롯·콘솔에 표시합니다.
 
 필요: ROOT(PyROOT), 빌드 산출물 `build/rootIO/librootIO.so`.
 
@@ -14,9 +18,9 @@ CBDsim ROOT에서 트리거별(T1/T2) 옵티컬 포톤 도착 시간 분포를 �
   입력: `build/CBDsim/stats/` 안의 `An_test_1.root` (없으면 그 디렉터리의 첫 .root)
   출력: 같은 디렉터리에 `timing_<입력파일stem>.png`
 
-예:
-  python3 plot_trigger_timing.py
-  python3 plot_trigger_timing.py my.root --ref min
+예 (저장소 루트에서):
+  python3 analysis/plot_trigger_timing.py
+  python3 analysis/plot_trigger_timing.py build/CBDsim/60GeV_e-_LG_1.root --ref min
 """
 
 from __future__ import annotations
@@ -93,6 +97,108 @@ def _resolve_output_path(
     return os.path.join(sd, f"timing_{stem}.png")
 
 
+def _path_with_tag(path: str, tag: str) -> str:
+    """foo/bar.png -> foo/bar_tag.png"""
+    d, f = os.path.split(path)
+    base, ext = os.path.splitext(f)
+    return os.path.join(d, f"{base}_{tag}{ext}")
+
+
+def _apply_root_plot_style(ROOT) -> None:
+    """통상 ROOT 배치 플롯에 가깝게 (투박)."""
+    s = ROOT.gStyle
+    s.SetOptStat(1111)
+    s.SetOptTitle(1)
+    s.SetHistLineWidth(2)
+    s.SetFrameLineWidth(1)
+    s.SetTitleFont(42, "XYZ")
+    s.SetLabelFont(42, "XYZ")
+    s.SetStatFont(42)
+
+
+def _save_root_canvas(
+    ROOT,
+    h1,
+    h2,
+    h_delta,
+    out_path: str,
+    input_basename: str,
+) -> None:
+    """T1, T2, per-event ⟨t⟩ 차이 세 패널 — 막대만(HIST), Δt 패널은 가우시안 피팅 곡선."""
+    _apply_root_plot_style(ROOT)
+    c = ROOT.TCanvas("c_timing", "timing", 1350, 420)
+    if input_basename:
+        c.SetTitle(input_basename)
+    c.Divide(3, 1)
+    hs = (
+        (h1, "T1 (trigger 0)", "t - t_{ref} (ns)", "optical photons"),
+        (h2, "T2 (trigger 1)", "t - t_{ref} (ns)", "optical photons"),
+        (
+            h_delta,
+            "Per-event #LT t#GT_{T1}-#LT t#GT_{T2}",
+            "#LT t#GT_{T1}-#LT t#GT_{T2} (ns)",
+            "events",
+        ),
+    )
+    for i, (h, subtitle, xax, yax) in enumerate(hs, start=1):
+        c.cd(i)
+        ROOT.gPad.SetLeftMargin(0.12)
+        ROOT.gPad.SetBottomMargin(0.15)
+        h.SetLineWidth(2)
+        if i < 3:
+            h.SetLineColor(ROOT.kBlue + 1)
+            h.SetLineStyle(1)
+            h.SetTitle(f"{subtitle};{xax};{yax}")
+            h.Draw("HIST")
+        else:
+            # 데이터: 검은 실선(스텝), 피트: 빨간 대시 — 피트 먼저 그린 뒤 히스토를 SAME으로 덮어 둘 다 보이게
+            h.SetLineColor(ROOT.kBlack)
+            h.SetLineStyle(1)  # solid
+            h.SetLineWidth(2)
+            h.SetFillStyle(0)
+            h.SetMarkerStyle(0)
+            h.SetTitle(f"{subtitle};{xax};{yax}")
+            xmin = float(h.GetXaxis().GetXmin())
+            xmax = float(h.GetXaxis().GetXmax())
+            fitfn = None
+            if h.GetSumOfWeights() > 0:
+                fitfn = ROOT.TF1("fit_delta_gaus", "gaus", xmin, xmax)
+                fitfn.SetNpx(500)
+                fitfn.SetParameter(0, float(h.GetMaximum()))
+                fitfn.SetParameter(1, float(h.GetMean()))
+                fitfn.SetParameter(2, max(float(h.GetRMS()), 1e-6))
+                h.Fit(fitfn, "QN", "", xmin, xmax)
+            h.Draw("HIST")
+            if fitfn is not None:
+                fitfn.SetLineColor(ROOT.kRed)
+                fitfn.SetLineWidth(2)
+                fitfn.SetLineStyle(1)  
+                fitfn.Draw("same")
+                pad = ROOT.gPad
+                pad.Modified()
+                pad.Update()
+                mu = fitfn.GetParameter(1)
+                mu_e = fitfn.GetParError(1)
+                sig = fitfn.GetParameter(2)
+                sig_e = fitfn.GetParError(2)
+                print(
+                    "  ROOT Gauss fit (Δt): "
+                    f"μ = {mu:.6f} ± {mu_e:.6f} ns, "
+                    f"σ = {sig:.6f} ± {sig_e:.6f} ns"
+                )
+                lat = ROOT.TLatex()
+                lat.SetNDC()
+                lat.SetTextFont(42)
+                lat.SetTextSize(0.034)
+                lat.DrawLatex(0.14, 0.84, f"Gauss #mu = {mu:.3f} #pm {mu_e:.3f} ns")
+                lat.DrawLatex(0.14, 0.77, f"Gauss #sigma = {sig:.3f} #pm {sig_e:.3f} ns")
+    out = out_path
+    if not out.lower().endswith((".png", ".pdf", ".svg")):
+        out += ".png"
+    c.SaveAs(out)
+    c.Close()
+
+
 def _load_rootio(lib: str | None, repo_root: str | None) -> None:
     import ROOT
 
@@ -120,19 +226,6 @@ def _load_rootio(lib: str | None, repo_root: str | None) -> None:
         "build/rootIO/librootIO.so 가 있는지 확인하거나 -l / ROOTIO_LIB 로 지정하세요.\n"
     )
     sys.exit(1)
-
-
-def _hist_mean_std_rms(h) -> tuple[float | None, float | None, float | None]:
-    """
-    합산 히스토그램(t - t_ref 분포)의 가중 평균, 표준편차, 총 가중치.
-    ROOT TH1::GetMean / GetRMS 는 빈 중심에 대한 가중 통계와 일치한다.
-    """
-    import ROOT
-
-    w = float(h.GetSumOfWeights())
-    if w <= 0:
-        return None, None, None
-    return float(h.GetMean()), float(h.GetRMS()), w
 
 
 def _vec_to_lists(lo, hi, cnt):
@@ -186,6 +279,8 @@ def _merged_from_tower(evt, trig: int):
     tw = evt.towerT1 if trig == 0 else evt.towerT2
     acc = [None, None, None]
     _merge_sipm_side(acc, tw.SiPMs)
+    if hasattr(tw, "SiPMFronts"):
+        _merge_sipm_side(acc, tw.SiPMFronts)
     if acc[0] is None:
         return [], [], []
     return acc[0], acc[1], acc[2]
@@ -231,6 +326,27 @@ def _ref_time(lows, highs, counts, ref_mode: str) -> float | None:
     raise ValueError(f"unknown ref mode: {ref_mode}")
 
 
+def _weighted_mean_absolute(
+    lows: list[float],
+    highs: list[float],
+    counts: list[int],
+    scale: float,
+) -> float | None:
+    """빈 중심의 포톤 수 가중 평균 시각 (절대 ns, 트리거별 t_ref 보정 없음)."""
+    if not counts:
+        return None
+    tot = sum(counts)
+    if tot <= 0:
+        return None
+    s = 0.0
+    for i in range(len(counts)):
+        if counts[i] == 0:
+            continue
+        t_c = 0.5 * (lows[i] + highs[i])
+        s += t_c * counts[i]
+    return (s / float(tot)) * scale
+
+
 def _accumulate_np(
     acc,
     lows,
@@ -267,7 +383,10 @@ def _accumulate_root(global_hist, lows, highs, counts, t_ref: float, scale: floa
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="T1/T2 옵티컬 포톤 시간 구조 (빈 합산) — 기준시간 보정 후 히스토그램"
+        description=(
+            "T1/T2 옵티컬 포톤 시간 구조 (빈 합산, 기준시간 보정) + "
+            "이벤트별 ⟨t⟩_T1−⟨t⟩_T2 (절대 ns)"
+        )
     )
     parser.add_argument(
         "input",
@@ -322,6 +441,30 @@ def main() -> None:
         type=float,
         default=1.0,
         help="축 스케일 (1.0이면 단위 ns)",
+    )
+    parser.add_argument(
+        "--style",
+        choices=("matplotlib", "root", "both"),
+        default="both",
+        help="matplotlib: mpl 3패널(T1,T2,이벤트별⟨t⟩차이), root: ROOT 3패널, both: 둘 다 저장",
+    )
+    parser.add_argument(
+        "--delta-xmin",
+        type=float,
+        default=None,
+        help="세 번째 패널(이벤트별 Δt) x 하한 (기본: --xmin 과 동일)",
+    )
+    parser.add_argument(
+        "--delta-xmax",
+        type=float,
+        default=None,
+        help="세 번째 패널 x 상한 (기본: --xmax 와 동일)",
+    )
+    parser.add_argument(
+        "--delta-bins",
+        type=int,
+        default=None,
+        help="세 번째 패널 빈 수 (기본: --bins 와 동일)",
     )
     args = parser.parse_args()
 
@@ -403,9 +546,32 @@ def main() -> None:
     h1.Sumw2()
     h2.Sumw2()
 
+    d_xmin = args.delta_xmin if args.delta_xmin is not None else args.xmin
+    d_xmax = args.delta_xmax if args.delta_xmax is not None else args.xmax
+    d_bins = args.delta_bins if args.delta_bins is not None else args.bins
+
+    h_delta = ROOT.TH1F(
+        "hDeltaMeanT",
+        "Per-event mean time difference;#LT t#GT_{T1}-#LT t#GT_{T2} (ns);events",
+        d_bins,
+        d_xmin,
+        d_xmax,
+    )
+    h_delta.Sumw2()
+
     skipped = [0, 0]
+    skipped_delta = 0
     for i in range(int(nmax)):
         tree.GetEntry(i)
+        lo1, hi1, cnt1 = _merged_from_tower(evt, 0)
+        lo2, hi2, cnt2 = _merged_from_tower(evt, 1)
+        mu1 = _weighted_mean_absolute(lo1, hi1, cnt1, args.ns_per_unit)
+        mu2 = _weighted_mean_absolute(lo2, hi2, cnt2, args.ns_per_unit)
+        if mu1 is not None and mu2 is not None:
+            h_delta.Fill(mu1 - mu2)
+        else:
+            skipped_delta += 1
+
         for trig, sk, acc in ((0, 0, acc1), (1, 1, acc2)):
             lows, highs, counts = _merged_from_tower(evt, trig)
             if not counts or sum(counts) == 0:
@@ -428,87 +594,203 @@ def main() -> None:
             h1.SetBinError(b, np.sqrt(max(acc1[b - 1], 0.0)))
             h2.SetBinError(b, np.sqrt(max(acc2[b - 1], 0.0)))
 
-    # matplotlib 플롯 (위에서 Agg 이미 설정됨)
-    try:
-        import matplotlib.pyplot as plt
-        import numpy as np
-    except ImportError:
-        sys.stderr.write("matplotlib/numpy 없음 — ROOT Canvas 로 저장합니다.\n")
-        c = ROOT.TCanvas("c", "", 900, 400)
-        c.Divide(2, 1)
-        c.cd(1)
-        h1.Draw("HIST")
-        c.cd(2)
-        h2.Draw("HIST")
-        out = output_path
-        if not out.lower().endswith((".png", ".pdf", ".svg")):
-            out += ".png"
-        c.SaveAs(out)
-        m1, s1, w1 = _hist_mean_std_rms(h1)
-        m2, s2, w2 = _hist_mean_std_rms(h2)
-        f.Close()
-        print(
-            f"저장: {out} (skipped T1={skipped[0]} T2={skipped[1]} empty events, "
-            f"n={int(nmax)}/{total_entries})"
-        )
-        for lab, m, s, w in (
-            ("T1", m1, s1, w1),
-            ("T2", m2, s2, w2),
-        ):
-            if m is None:
-                print(f"  {lab}: 합산 분포 없음 (mean/std N/A)")
-            else:
-                print(f"  {lab}: mean={m:.4f} ns, std(RMS)={s:.4f} ns, N={w:.0f}")
-        return
+    # T1/T2: OptStat「Entries」= 해당 트리거에 포톤이 있어 누적에 포함된 이벤트 수 (SetBinContent만 쓸 때 120=빈 개수로 잘못 보이던 것 수정)
+    evt_t1 = int(nmax) - skipped[0]
+    evt_t2 = int(nmax) - skipped[1]
+    h1.SetEntries(float(evt_t1))
+    h2.SetEntries(float(evt_t2))
 
-    fig, axes = plt.subplots(1, 2, figsize=(11, 4), sharey=True)
+    bn = os.path.basename(input_path)
+    style = args.style
 
-    def root_hist_to_xy(h):
-        cx = np.array([h.GetBinCenter(b) for b in range(1, h.GetNbinsX() + 1)])
-        cy = np.array([h.GetBinContent(b) for b in range(1, h.GetNbinsX() + 1)])
-        ce = np.array([h.GetBinError(b) for b in range(1, h.GetNbinsX() + 1)])
-        return cx, cy, ce
+    root_out = output_path if style == "root" else _path_with_tag(output_path, "root")
+    if style in ("root", "both"):
+        _save_root_canvas(ROOT, h1, h2, h_delta, root_out, bn)
+        print(f"저장 (ROOT): {root_out}")
 
-    for ax, h, title in zip(
-        axes,
-        (h1, h2),
-        ("T1 (trigger 0)", "T2 (trigger 1)"),
-    ):
-        x, y, err = root_hist_to_xy(h)
-        ax.bar(x, y, width=(x[1] - x[0]) if len(x) > 1 else 0.1, align="center", alpha=0.85)
-        ax.set_xlabel(r"$t - t_{\mathrm{ref}}$ (ns)" + (f" [×{args.ns_per_unit}]" if args.ns_per_unit != 1 else ""))
-        ax.set_ylabel("optical photons (summed)")
-        m, s, w = _hist_mean_std_rms(h)
-        stat_line = (
-            f"mean={m:.3f} ns, std={s:.3f} ns, N={w:.0f}"
-            if m is not None
-            else "합산 분포 없음"
-        )
-        ax.set_title(f"{title}\n(ref={args.ref} per event)\n{stat_line}", fontsize=9)
-        ax.axvline(0.0, color="k", ls="--", lw=0.8, alpha=0.5)
+    if style in ("matplotlib", "both"):
+        try:
+            import matplotlib.pyplot as plt
+            import numpy as np
+        except ImportError:
+            if style == "matplotlib":
+                sys.stderr.write("matplotlib/numpy 없음 — 종료.\n")
+                f.Close()
+                sys.exit(1)
+            sys.stderr.write("matplotlib/numpy 없음 — ROOT 출력만 사용.\n")
+        else:
+            fig, axes = plt.subplots(1, 3, figsize=(14, 4))
 
-    fig.suptitle(os.path.basename(input_path))
-    fig.tight_layout()
-    out = output_path
-    if not out.lower().endswith((".png", ".pdf", ".svg")):
-        out += ".png"
-    fig.savefig(out, dpi=150)
-    m1, s1, w1 = _hist_mean_std_rms(h1)
-    m2, s2, w2 = _hist_mean_std_rms(h2)
+            def root_hist_to_xy(h):
+                cx = np.array([h.GetBinCenter(b) for b in range(1, h.GetNbinsX() + 1)])
+                cy = np.array([h.GetBinContent(b) for b in range(1, h.GetNbinsX() + 1)])
+                return cx, cy
+
+            def _gauss(x, a, mu, sigma):
+                return a * np.exp(-0.5 * ((x - mu) / sigma) ** 2)
+
+            for ax, h, title, is_delta in zip(
+                axes,
+                (h1, h2, h_delta),
+                (
+                    "T1 (trigger 0)",
+                    "T2 (trigger 1)",
+                    r"$\langle t\rangle_{\mathrm{T1}}-\langle t\rangle_{\mathrm{T2}}$ (per event)",
+                ),
+                (False, False, True),
+            ):
+                x, y = root_hist_to_xy(h)
+                w = (x[1] - x[0]) if len(x) > 1 else 0.1
+                if is_delta:
+                    # 데이터: 검은 실선 스텝 / 피트는 아래에서 빨간 대시로 그림
+                    edges = np.linspace(
+                        float(x[0]) - w / 2,
+                        float(x[-1]) + w / 2,
+                        len(x) + 1,
+                    )
+                    ax.stairs(
+                        y,
+                        edges,
+                        color="black",
+                        linewidth=2.2,
+                        linestyle="-",
+                        zorder=2,
+                    )
+                else:
+                    ax.bar(
+                        x,
+                        y,
+                        width=w,
+                        align="center",
+                        alpha=0.85,
+                        color="#4477aa",
+                    )
+                if is_delta:
+                    ax.set_xlabel(
+                        r"$\langle t\rangle_{\mathrm{T1}} - \langle t\rangle_{\mathrm{T2}}$ (ns)"
+                        + (f" [×{args.ns_per_unit}]" if args.ns_per_unit != 1 else "")
+                    )
+                    ax.set_ylabel("events")
+                    ax.set_title("Absolute weighted mean time\n(both triggers)")
+                else:
+                    ax.set_xlabel(
+                        r"$t - t_{\mathrm{ref}}$ (ns)"
+                        + (f" [×{args.ns_per_unit}]" if args.ns_per_unit != 1 else "")
+                    )
+                    ax.set_ylabel("optical photons (summed)")
+                    ax.set_title(f"{title}\n(ref={args.ref} per event)")
+                ax.axvline(0.0, color="k", ls="--", lw=0.8, alpha=0.5)
+                if is_delta:
+                    ntot = float(h.GetEntries())
+                else:
+                    ntot = float(evt_t1 if h.GetName() == "hT1" else evt_t2)
+                mu = float(h.GetMean())
+                sigma = float(h.GetRMS())
+                mu_err = float(h.GetMeanError()) if h.GetSumOfWeights() > 0 else 0.0
+                try:
+                    sig_err = float(h.GetRMSError())
+                except Exception:
+                    sig_err = 0.0
+
+                stat_lines = [
+                    rf"$N={ntot:.0f}$",
+                    rf"$\mu={mu:.3f}\pm{mu_err:.3f}$ ns",
+                ]
+                fit_drawn = False
+                if is_delta and np.sum(y) > 0 and len(x) >= 3:
+                    sw = float(np.sum(y))
+                    mu0 = float(np.sum(x * y) / sw)
+                    var0 = float(np.sum(y * (x - mu0) ** 2) / sw)
+                    sig0 = max(np.sqrt(max(var0, 1e-18)), 1e-6)
+                    p0 = [max(float(np.max(y)), 1e-9), mu0, sig0]
+                    fit_ok = False
+                    try:
+                        from scipy.optimize import curve_fit
+
+                        popt, pcov = curve_fit(
+                            _gauss,
+                            x,
+                            y,
+                            p0=p0,
+                            sigma=np.sqrt(np.maximum(y, 1.0)),
+                            absolute_sigma=True,
+                            maxfev=10000,
+                        )
+                        perr = np.sqrt(np.diag(pcov))
+                        xf = np.linspace(float(x.min()), float(x.max()), 200)
+                        ax.plot(
+                            xf,
+                            _gauss(xf, *popt),
+                            color="red",
+                            ls="--",
+                            lw=2.0,
+                            zorder=3,
+                            label="Gauss fit",
+                        )
+                        fit_ok = True
+                        fit_drawn = True
+                        print(
+                            "  mpl Gauss fit (Δt): "
+                            f"μ = {popt[1]:.6f} ± {perr[1]:.6f} ns, "
+                            f"σ = {popt[2]:.6f} ± {perr[2]:.6f} ns"
+                        )
+                        stat_lines.append(
+                            rf"Gauss $\sigma={popt[2]:.3f}\pm{perr[2]:.3f}$ ns"
+                        )
+                    except Exception:
+                        pass
+                    if not fit_ok:
+                        if sig_err > 0.0:
+                            stat_lines.append(rf"RMS $\sigma={sigma:.3f}\pm{sig_err:.3f}$ ns")
+                        else:
+                            stat_lines.append(rf"RMS $\sigma={sigma:.3f}$ ns")
+                elif not is_delta:
+                    if sig_err > 0.0:
+                        stat_lines.append(rf"$\sigma={sigma:.3f}\pm{sig_err:.3f}$ ns")
+                    else:
+                        stat_lines.append(rf"$\sigma={sigma:.3f}$ ns")
+                else:
+                    if sig_err > 0.0:
+                        stat_lines.append(rf"RMS $\sigma={sigma:.3f}\pm{sig_err:.3f}$ ns")
+                    else:
+                        stat_lines.append(rf"RMS $\sigma={sigma:.3f}$ ns")
+
+                stat_txt = "\n".join(stat_lines)
+                ax.text(
+                    0.97,
+                    0.97,
+                    stat_txt,
+                    transform=ax.transAxes,
+                    fontsize=8,
+                    verticalalignment="top",
+                    horizontalalignment="right",
+                    bbox=dict(
+                        boxstyle="round,pad=0.25",
+                        facecolor="white",
+                        edgecolor="0.7",
+                        alpha=0.92,
+                    ),
+                )
+                if fit_drawn:
+                    ax.legend(loc="upper left", fontsize=7)
+
+            fig.suptitle(bn)
+            fig.tight_layout()
+            mpl_out = output_path
+            if not mpl_out.lower().endswith((".png", ".pdf", ".svg")):
+                mpl_out += ".png"
+            fig.savefig(mpl_out, dpi=150)
+            print(f"저장 (matplotlib): {mpl_out}")
+
     f.Close()
-    print(f"저장: {out}")
+    n_dt = int(h_delta.GetEntries())
     print(
         f"  이벤트 사용: {int(nmax)} / {total_entries} "
         f"(빈 이벤트 스킵 T1={skipped[0]}, T2={skipped[1]})"
     )
-    for lab, m, s, w in (
-        ("T1", m1, s1, w1),
-        ("T2", m2, s2, w2),
-    ):
-        if m is None:
-            print(f"  {lab}: 합산 분포 없음 (mean/std N/A)")
-        else:
-            print(f"  {lab}: mean={m:.4f} ns, std(RMS)={s:.4f} ns, N={w:.0f}")
+    print(
+        f"  Δt 히스토그램: {n_dt} entries (한쪽 트리거만/무포톤으로 Δt 제외: {skipped_delta})"
+    )
 
 
 if __name__ == "__main__":

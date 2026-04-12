@@ -7,6 +7,8 @@
 #include "G4ParticleDefinition.hh"
 #include "G4ParticleTypes.hh"
 #include "G4VPhysicalVolume.hh"
+#include "G4VTouchable.hh"
+#include "G4StepPoint.hh"
 
 #include <atomic>
 
@@ -17,8 +19,40 @@ constexpr int kSiPMSD_DbgMaxPrint = 25;
 }
 
 namespace {
-/** Legacy: depth-2 = SiPM cell copy, depth-3 = tower parent. Proto: depth-1 = protoSipmEnvPhys (copy 0=T1,1=T2), single SiPM pixel. */
+
+G4bool PvIsSipmWafer(const G4VPhysicalVolume* pv) {
+  if (!pv) return false;
+  const G4String& nm = pv->GetName();
+  return nm == "protoSipmWaferPhys" || nm == "waferPhysical";
+}
+
+G4bool TowerFromProtoSipmTouchable(const G4VTouchable* touch, G4int& towernum) {
+  if (!touch) return false;
+  const G4int depth = touch->GetHistoryDepth();
+  for (G4int d = 0; d <= depth; ++d) {
+    auto* vol = touch->GetVolume(d);
+    if (vol && vol->GetName() == "protoSipmEnvPhys") {
+      towernum = vol->GetCopyNo();
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Legacy: depth-2 = SiPM cell copy, depth-3 = tower parent. Proto: walk touchable for protoSipmEnvPhys.
+ *  Optical photons: use the step point whose PV is the wafer (pre or post); Post alone can mis-identify at boundaries. */
 void SiPMAndTowerFromTouchable(G4Step* step, G4int& SiPMnum, G4int& towernum) {
+  SiPMnum = 0;
+  towernum = 0;
+  const G4StepPoint* inWafer = nullptr;
+  if (PvIsSipmWafer(step->GetPostStepPoint()->GetPhysicalVolume())) {
+    inWafer = step->GetPostStepPoint();
+  } else if (PvIsSipmWafer(step->GetPreStepPoint()->GetPhysicalVolume())) {
+    inWafer = step->GetPreStepPoint();
+  }
+  if (inWafer) {
+    if (TowerFromProtoSipmTouchable(inWafer->GetTouchable(), towernum)) return;
+  }
   auto* touch = step->GetPostStepPoint()->GetTouchable();
   G4VPhysicalVolume* vol1 = touch->GetVolume(1);
   G4VPhysicalVolume* vol2 = touch->GetVolume(2);
