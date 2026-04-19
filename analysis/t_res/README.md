@@ -29,3 +29,26 @@ python3 analysis/compare_timing_resolution.py
 두 파일 트리 엔트리가 다르면 **작은 쪽(min)** 만큼만 각각 읽어 **동일 N**으로 비교합니다.
 
 → `figures/compare_delta_timing_LG_vs_noLG.png`, 같은 stem `.csv` (Gauss σ, σ/√2, `tree_events_used` 등).
+
+### 한 이벤트 포톤 시간 분포 (`event_*_photon_time.png`)
+
+**한 이벤트**만 골라, T1/T2 각각 **SiPM에 합쳐진 도착 시간**을 ROOT `HIST` 로 그립니다.  
+**고정 폭 리빈(기본 20 ps)** 이며, **x 축은 포톤이 있는 시간대만**(여유 마진 포함) 자동 범위.
+
+```bash
+python3 analysis/plot_event_photon_time.py analysis/t_res/data/60GeV_e-_noLG_0.root --event 0
+# python3 analysis/plot_event_photon_time.py ... --bin-width-ps 25
+```
+
+→ `figures/event_<stem>_ev<N>_photon_time.png`
+
+### 이벤트 평균 포톤 시간 (`mean_photon_time_*.png`)
+
+읽는 모든 이벤트에 대해 **빈마다 포톤 수의 산술 평균** TH1F (오버레이 곡선 없음).  
+`--trig both` 이면 T1/T2 **같은 시간 축**(한쪽만 신호가 있어도 양쪽 패드에 그려짐).
+
+```bash
+python3 analysis/plot_overlay_photon_time.py analysis/t_res/data/60GeV_e-_noLG_0.root
+```
+
+→ `figures/mean_photon_time_<stem>.png`

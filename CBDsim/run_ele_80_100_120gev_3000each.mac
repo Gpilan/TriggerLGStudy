@@ -1,0 +1,21 @@
+# 전자 80 / 100 / 120 GeV 각 3000 이벤트 (한 세션, 한 .root 에 9000 이벤트)
+# 분석 시 트리에서 primaryEkin (또는 동일 필드)으로 에너지별로 자르기.
+# 파일을 에너지마다 나누려면 이 매크로 대신 run_ele_*gev_3000.mac 를 세 번 따로 실행하고
+# CBDsim 인자로 서로 다른 출력 stem 을 주면 됨.
+#
+# 실행 예: ./CBDsim run_ele_80_100_120gev_3000each.mac 0 scan60
+/vis/disable
+/run/numberOfThreads 1
+/run/initialize
+/run/verbose 1
+
+/gun/particle e-
+
+/gun/energy 80 GeV
+/run/beamOn 3000
+
+/gun/energy 100 GeV
+/run/beamOn 3000
+
+/gun/energy 120 GeV
+/run/beamOn 3000

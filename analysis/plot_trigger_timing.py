@@ -326,7 +326,48 @@ def _merged_from_tower(evt, trig: int):
     return acc[0], acc[1], acc[2]
 
 
-def _ref_time(lows, highs, counts, ref_mode: str) -> float | None:
+def _cfd_absolute_time(
+    lows: list[float],
+    highs: list[float],
+    counts: list[int],
+    fraction: float,
+    scale: float,
+) -> float | None:
+    """
+    Constant-fraction (CFD) 스타일: 시간 순으로 누적 포톤 수가 ``fraction * max(bin)`` 에
+    처음 도달할 때의 t (빈 구간 안에서는 균일 가정으로 선형 보간). 피팅 불필요.
+    """
+    if not counts:
+        return None
+    n_max = max(counts)
+    if n_max <= 0:
+        return None
+    thr = float(fraction) * float(n_max)
+    if thr <= 0:
+        return None
+    idx = list(range(len(counts)))
+    idx.sort(key=lambda i: 0.5 * (float(lows[i]) + float(highs[i])))
+    cum = 0.0
+    for i in idx:
+        c = int(counts[i])
+        if c <= 0:
+            continue
+        t_lo = float(lows[i])
+        t_hi = float(highs[i])
+        cum_prev = cum
+        cum += float(c)
+        if cum >= thr:
+            need = thr - cum_prev
+            frac_in_bin = need / float(c) if c > 0 else 0.0
+            frac_in_bin = max(0.0, min(1.0, frac_in_bin))
+            t_abs = t_lo + frac_in_bin * (t_hi - t_lo)
+            return float(t_abs * scale)
+    return None
+
+
+def _ref_time(
+    lows, highs, counts, ref_mode: str, *, cfd_fraction: float = 0.3
+) -> float | None:
     """기준 시간 t_ref (ns). 분포를 이 값 기준으로 0 근처에 맞춤."""
     try:
         import numpy as np
@@ -362,6 +403,9 @@ def _ref_time(lows, highs, counts, ref_mode: str) -> float | None:
         # 광자 수가 가장 많은 빈의 중심
         imax = max(range(len(counts)), key=lambda i: counts[i])
         return centers[imax] if np is None else float(centers[imax])
+
+    if ref_mode == "cfd":
+        return _cfd_absolute_time(lows, highs, counts, cfd_fraction, 1.0)
 
     raise ValueError(f"unknown ref mode: {ref_mode}")
 
@@ -448,9 +492,20 @@ def main() -> None:
     )
     parser.add_argument(
         "--ref",
-        choices=("mean", "min", "mode"),
+        choices=("mean", "min", "mode", "cfd"),
         default="mean",
-        help="이벤트별 기준 시간: mean=가중평균, min=가장 이른 빈, mode=최다빈 (기본 mean)",
+        help=(
+            "T1/T2 패널 기준시간 및 Δt 정의: mean/min/mode 또는 "
+            "cfd=누적이 cfd_frac×최대빈에 도달하는 시각 (가중평균 대신)"
+        ),
+    )
+    parser.add_argument(
+        "--cfd-fraction",
+        type=float,
+        default=0.3,
+        dest="cfd_fraction",
+        metavar="F",
+        help="--ref cfd 일 때 임계 = F × (최대 빈 포톤 수) (기본 0.3)",
     )
     parser.add_argument(
         "--max-events",
@@ -461,20 +516,20 @@ def main() -> None:
     parser.add_argument(
         "--xmin",
         type=float,
-        default=-15.0,
+        default=-5.0,
         help="보정 후 시간 축 하한 (ns)",
     )
     parser.add_argument(
         "--xmax",
         type=float,
-        default=15.0,
+        default=5.0,
         help="보정 후 시간 축 상한 (ns)",
     )
     parser.add_argument(
         "--bins",
         type=int,
-        default=120,
-        help="히스토그램 빈 수",
+        default=10,
+        help="히스토그램 빈 수 (기본 10: --xmin/--xmax 기본 ±5 ns 일 때 빈 폭 약 1 ns)",
     )
     parser.add_argument(
         "--ns-per-unit",
@@ -594,13 +649,18 @@ def main() -> None:
     d_xmax = args.delta_xmax if args.delta_xmax is not None else args.xmax
     d_bins = args.delta_bins if args.delta_bins is not None else args.bins
 
-    h_delta = ROOT.TH1F(
-        "hDeltaMeanT",
-        "Per-event mean time difference;#LT t#GT_{T1}-#LT t#GT_{T2} (ns);events",
-        d_bins,
-        d_xmin,
-        d_xmax,
-    )
+    if args.ref == "cfd":
+        delta_title_root = (
+            "Per-event CFD time difference;"
+            "CFD(t)_{T1}-CFD(t)_{T2} (ns);events"
+        )
+    else:
+        delta_title_root = (
+            "Per-event mean time difference;"
+            "#LT t#GT_{T1}-#LT t#GT_{T2} (ns);events"
+        )
+
+    h_delta = ROOT.TH1F("hDeltaMeanT", delta_title_root, d_bins, d_xmin, d_xmax)
     h_delta.Sumw2()
     # TFile 이 열려 있을 때 gDirectory 가 파일을 가리키면 TH1 이 파일 소유가 되어 Close() 시 삭제됨
     h1.SetDirectory(0)
@@ -613,8 +673,12 @@ def main() -> None:
         tree.GetEntry(i)
         lo1, hi1, cnt1 = _merged_from_tower(evt, 0)
         lo2, hi2, cnt2 = _merged_from_tower(evt, 1)
-        mu1 = _weighted_mean_absolute(lo1, hi1, cnt1, args.ns_per_unit)
-        mu2 = _weighted_mean_absolute(lo2, hi2, cnt2, args.ns_per_unit)
+        if args.ref == "cfd":
+            mu1 = _cfd_absolute_time(lo1, hi1, cnt1, args.cfd_fraction, args.ns_per_unit)
+            mu2 = _cfd_absolute_time(lo2, hi2, cnt2, args.cfd_fraction, args.ns_per_unit)
+        else:
+            mu1 = _weighted_mean_absolute(lo1, hi1, cnt1, args.ns_per_unit)
+            mu2 = _weighted_mean_absolute(lo2, hi2, cnt2, args.ns_per_unit)
         if mu1 is not None and mu2 is not None:
             h_delta.Fill(mu1 - mu2)
         else:
@@ -625,7 +689,9 @@ def main() -> None:
             if not counts or sum(counts) == 0:
                 skipped[sk] += 1
                 continue
-            t_ref = _ref_time(lows, highs, counts, args.ref)
+            t_ref = _ref_time(
+                lows, highs, counts, args.ref, cfd_fraction=args.cfd_fraction
+            )
             if t_ref is None:
                 skipped[sk] += 1
                 continue
@@ -677,14 +743,15 @@ def main() -> None:
             def _gauss(x, a, mu, sigma):
                 return a * np.exp(-0.5 * ((x - mu) / sigma) ** 2)
 
+            _d3 = (
+                r"$\mathrm{CFD}_{T1}-\mathrm{CFD}_{T2}$ (per event)"
+                if args.ref == "cfd"
+                else r"$\langle t\rangle_{\mathrm{T1}}-\langle t\rangle_{\mathrm{T2}}$ (per event)"
+            )
             for ax, h, title, is_delta in zip(
                 axes,
                 (h1, h2, h_delta),
-                (
-                    "T1 (trigger 0)",
-                    "T2 (trigger 1)",
-                    r"$\langle t\rangle_{\mathrm{T1}}-\langle t\rangle_{\mathrm{T2}}$ (per event)",
-                ),
+                ("T1 (trigger 0)", "T2 (trigger 1)", _d3),
                 (False, False, True),
             ):
                 x, y = root_hist_to_xy(h)
@@ -714,12 +781,21 @@ def main() -> None:
                         color="#4477aa",
                     )
                 if is_delta:
-                    ax.set_xlabel(
-                        r"$\langle t\rangle_{\mathrm{T1}} - \langle t\rangle_{\mathrm{T2}}$ (ns)"
-                        + (f" [×{args.ns_per_unit}]" if args.ns_per_unit != 1 else "")
-                    )
+                    if args.ref == "cfd":
+                        ax.set_xlabel(
+                            r"$\mathrm{CFD}_{T1} - \mathrm{CFD}_{T2}$ (ns)"
+                            + (f" [×{args.ns_per_unit}]" if args.ns_per_unit != 1 else "")
+                        )
+                        ax.set_title(
+                            f"CFD time (frac={args.cfd_fraction}×max bin)\n(both triggers)"
+                        )
+                    else:
+                        ax.set_xlabel(
+                            r"$\langle t\rangle_{\mathrm{T1}} - \langle t\rangle_{\mathrm{T2}}$ (ns)"
+                            + (f" [×{args.ns_per_unit}]" if args.ns_per_unit != 1 else "")
+                        )
+                        ax.set_title("Absolute weighted mean time\n(both triggers)")
                     ax.set_ylabel("events")
-                    ax.set_title("Absolute weighted mean time\n(both triggers)")
                 else:
                     ax.set_xlabel(
                         r"$t - t_{\mathrm{ref}}$ (ns)"

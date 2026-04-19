@@ -26,6 +26,9 @@ set(
   analysis_SCRIPTS
   plot_trigger_timing.py
   compare_timing_resolution.py
+  plot_event_photon_time.py
+  plot_overlay_photon_time.py
+  photon_time_root.py
 )
 
 foreach(_script ${analysis_SCRIPTS})

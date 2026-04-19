@@ -65,6 +65,10 @@ set(CBDsim_SCRIPTS
   vis.mac
   run_ele.mac
   run_ele_60gev.mac
+  run_ele_80gev_3000.mac
+  run_ele_100gev_3000.mac
+  run_ele_120gev_3000.mac
+  run_ele_80_100_120gev_3000each.mac
   run_muon.mac
   run_muon_10mev_minimal.mac
   run_gamma.mac

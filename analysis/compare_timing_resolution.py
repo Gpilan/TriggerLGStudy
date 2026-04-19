@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 두 CBDsim .root 를 읽어, `plot_trigger_timing.py` 의 **세 번째 패널(Δt)** 과 동일한
-히스토그램(이벤트별 ⟨t⟩_T1 − ⟨t⟩_T2)을 각각 그리고 가우시안 σ를 구합니다.
+히스토그램을 각각 그리고 가우시안 σ를 구합니다. 기본은 이벤트별 가중 평균 시간 차
+(⟨t⟩_T1 − ⟨t⟩_T2); `--ref cfd` 이면 `plot_trigger_timing.py` 와 같이 CFD 시각 차입니다.
 
 **타이밍 레졸루션** (정의): σ / √2  (ns)
 
@@ -32,6 +33,7 @@ import sys
 
 # plot_trigger_timing 과 동일 디렉터리에서 헬퍼 재사용
 from plot_trigger_timing import (
+    _cfd_absolute_time,
     _figures_dir,
     _find_repo_root,
     _load_rootio,
@@ -54,8 +56,13 @@ def _fill_delta_hist(
     ns_per_unit: float,
     hist_name: str,
     hist_title: str,
+    ref_mode: str = "mean",
+    cfd_fraction: float = 0.3,
 ) -> tuple[object, int, int]:
-    """ROOT TH1F(Δt) 반환. (histogram, n_used_events, skipped_delta)."""
+    """ROOT TH1F(Δt) 반환. (histogram, n_used_events, skipped_delta).
+
+    ref_mode ``mean``: 가중 평균 절대시간 차. ``cfd``: ``plot_trigger_timing`` 과 동일 CFD.
+    """
     import ROOT
 
     f = ROOT.TFile.Open(path)
@@ -88,8 +95,12 @@ def _fill_delta_hist(
         tree.GetEntry(i)
         lo1, hi1, cnt1 = _merged_from_tower(evt, 0)
         lo2, hi2, cnt2 = _merged_from_tower(evt, 1)
-        mu1 = _weighted_mean_absolute(lo1, hi1, cnt1, ns_per_unit)
-        mu2 = _weighted_mean_absolute(lo2, hi2, cnt2, ns_per_unit)
+        if ref_mode == "cfd":
+            mu1 = _cfd_absolute_time(lo1, hi1, cnt1, cfd_fraction, ns_per_unit)
+            mu2 = _cfd_absolute_time(lo2, hi2, cnt2, cfd_fraction, ns_per_unit)
+        else:
+            mu1 = _weighted_mean_absolute(lo1, hi1, cnt1, ns_per_unit)
+            mu2 = _weighted_mean_absolute(lo2, hi2, cnt2, ns_per_unit)
         if mu1 is not None and mu2 is not None:
             h_delta.Fill(mu1 - mu2)
         else:
@@ -146,6 +157,8 @@ def _plot_pair_mpl(
     fit_b: dict | None,
     label_b: str,
     ns_per_unit: float,
+    *,
+    ref_mode: str = "mean",
 ) -> None:
     import matplotlib.pyplot as plt
     import numpy as np
@@ -181,10 +194,17 @@ def _plot_pair_mpl(
         sig_e = fit["sigma_err"] if fit else 0.0
         tres = sig / SQRT2
         tres_e = sig_e / SQRT2
-        ax.set_xlabel(
-            r"$\langle t\rangle_{\mathrm{T1}} - \langle t\rangle_{\mathrm{T2}}$ (ns)"
-            + (f" [×{ns_per_unit}]" if ns_per_unit != 1 else "")
-        )
+        if ref_mode == "cfd":
+            xl = (
+                r"$\mathrm{CFD}_{T1} - \mathrm{CFD}_{T2}$ (ns)"
+                + (f" [×{ns_per_unit}]" if ns_per_unit != 1 else "")
+            )
+        else:
+            xl = (
+                r"$\langle t\rangle_{\mathrm{T1}} - \langle t\rangle_{\mathrm{T2}}$ (ns)"
+                + (f" [×{ns_per_unit}]" if ns_per_unit != 1 else "")
+            )
+        ax.set_xlabel(xl)
         ax.set_ylabel("events")
         ax.set_title(title)
         ax.axvline(0.0, color="k", ls="--", lw=0.8, alpha=0.5)
@@ -244,13 +264,31 @@ def main() -> None:
         action="store_true",
         help="트리 엔트리 수를 맞추지 않고 각 파일 전체 사용",
     )
-    parser.add_argument("--xmin", type=float, default=-15.0)
-    parser.add_argument("--xmax", type=float, default=15.0)
-    parser.add_argument("--bins", type=int, default=120)
+    parser.add_argument("--xmin", type=float, default=-5.0)
+    parser.add_argument("--xmax", type=float, default=5.0)
+    parser.add_argument(
+        "--bins",
+        type=int,
+        default=10,
+        help="히스토그램 빈 수 (기본 10: --xmin/--xmax 기본 ±5 ns 일 때 빈 폭 약 1 ns)",
+    )
     parser.add_argument("--delta-xmin", type=float, default=None)
     parser.add_argument("--delta-xmax", type=float, default=None)
     parser.add_argument("--delta-bins", type=int, default=None)
     parser.add_argument("--ns-per-unit", type=float, default=1.0)
+    parser.add_argument(
+        "--ref",
+        choices=("mean", "cfd"),
+        default="mean",
+        help="Δt 정의: mean=가중평균 시간 차, cfd=plot_trigger_timing 과 동일 CFD",
+    )
+    parser.add_argument(
+        "--cfd-fraction",
+        type=float,
+        default=0.3,
+        dest="cfd_fraction",
+        help="--ref cfd 일 때 임계 = F × (최대 빈 포톤 수) (기본 0.3)",
+    )
     parser.add_argument("-l", "--rootio-lib", default=None)
     args = parser.parse_args()
 
@@ -308,6 +346,13 @@ def main() -> None:
             f"→ 각각 처음 {max_ev} 이벤트로 비교 (동일 N)"
         )
 
+    if args.ref == "cfd":
+        title_lg = "LG: CFD(t)_{T1}-CFD(t)_{T2};ns;events"
+        title_nlg = "no LG: CFD(t)_{T1}-CFD(t)_{T2};ns;events"
+    else:
+        title_lg = "LG: #LT t#GT_{T1}-#LT t#GT_{T2};ns;events"
+        title_nlg = "no LG: #LT t#GT_{T1}-#LT t#GT_{T2};ns;events"
+
     h_lg, n_lg, sk_lg = _fill_delta_hist(
         path_lg,
         max_events=max_ev_lg,
@@ -316,7 +361,9 @@ def main() -> None:
         d_bins=d_bins,
         ns_per_unit=args.ns_per_unit,
         hist_name="hDeltaLG",
-        hist_title="LG: #LT t#GT_{T1}-#LT t#GT_{T2};ns;events",
+        hist_title=title_lg,
+        ref_mode=args.ref,
+        cfd_fraction=args.cfd_fraction,
     )
     h_nlg, n_nlg, sk_nlg = _fill_delta_hist(
         path_nlg,
@@ -326,7 +373,9 @@ def main() -> None:
         d_bins=d_bins,
         ns_per_unit=args.ns_per_unit,
         hist_name="hDeltaNoLG",
-        hist_title="no LG: #LT t#GT_{T1}-#LT t#GT_{T2};ns;events",
+        hist_title=title_nlg,
+        ref_mode=args.ref,
+        cfd_fraction=args.cfd_fraction,
     )
 
     fit_lg = _fit_gaus_delta(h_lg, ROOT, "lg")
@@ -346,6 +395,8 @@ def main() -> None:
         )
 
     stem = "compare_delta_timing_LG_vs_noLG"
+    if args.ref == "cfd":
+        stem = f"{stem}_cfd"
     out_png = args.output
     if not out_png:
         out_png = os.path.join(_figures_dir(repo_root), f"{stem}.png")
@@ -431,12 +482,20 @@ def main() -> None:
             fit_nlg,
             f"no LG (Δt)\n{bn_nlg}",
             args.ns_per_unit,
+            ref_mode=args.ref,
         )
-        fig.suptitle(
-            r"Per-event $\langle t\rangle_{\mathrm{T1}}-\langle t\rangle_{\mathrm{T2}}$ "
-            r"(timing res. $=\sigma/\sqrt{2}$)",
-            fontsize=11,
-        )
+        if args.ref == "cfd":
+            fig.suptitle(
+                r"Per-event $\mathrm{CFD}_{T1}-\mathrm{CFD}_{T2}$ "
+                rf"(frac={args.cfd_fraction}$\times$max bin; timing res. $=\sigma/\sqrt{{2}}$)",
+                fontsize=11,
+            )
+        else:
+            fig.suptitle(
+                r"Per-event $\langle t\rangle_{\mathrm{T1}}-\langle t\rangle_{\mathrm{T2}}$ "
+                r"(timing res. $=\sigma/\sqrt{2}$)",
+                fontsize=11,
+            )
         fig.tight_layout()
         fig.savefig(out_png, dpi=150)
         print(f"PNG 저장: {out_png}")
