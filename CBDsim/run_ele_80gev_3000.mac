@@ -1,0 +1,9 @@
+# 전자 80 GeV, 3000 이벤트
+/vis/disable
+/run/numberOfThreads 1
+/run/initialize
+/run/verbose 1
+
+/gun/particle e-
+/gun/energy 80 GeV
+/run/beamOn 3000
