@@ -1,0 +1,11 @@
+# 전자 120 GeV, 3000 이벤트 (Proto 지오메트리 배치용)
+# 실행 예: ./CBDsim run_ele_120gev_3000.mac 0 mystats
+#          -> mystats_<seed>.root (RunAction 기준)
+/vis/disable
+/run/numberOfThreads 1
+/run/initialize
+/run/verbose 1
+
+/gun/particle e-
+/gun/energy 120 GeV
+/run/beamOn 3000
