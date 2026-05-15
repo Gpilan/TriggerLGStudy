@@ -130,6 +130,7 @@ void CBDsimMaterials::CreateMaterials() {
   G4MaterialPropertiesTable* mpLYSO;
 
 ///--- Material property tables for fiber materials ---
+  G4MaterialPropertiesTable* mpVacuum;
   G4MaterialPropertiesTable* mpAir;
   G4MaterialPropertiesTable* mpPS;
   G4MaterialPropertiesTable* mpPMMA;
@@ -150,6 +151,11 @@ void CBDsimMaterials::CreateMaterials() {
 
   const G4int nEnt = sizeof(opEn) / sizeof(G4double);
 //////http://nuclear.korea.ac.kr/~lamps/geant4/G4MaterialPropertiesIndex_8hh_source.html
+
+G4double RI_Vac[nEnt]; std::fill_n(RI_Vac,nEnt,1.0);
+mpVacuum = new G4MaterialPropertiesTable();
+mpVacuum->AddProperty("RINDEX",opEn,RI_Vac,nEnt);
+fVacuum->SetMaterialPropertiesTable(mpVacuum);
 
 G4double RI_Air[nEnt]; std::fill_n(RI_Air,nEnt,1.0);
 mpAir = new G4MaterialPropertiesTable();
@@ -299,7 +305,7 @@ fPWO->SetMaterialPropertiesTable(mpPWO);
   fPS->SetMaterialPropertiesTable(mpPS);
   fPS->GetIonisation()->SetBirksConstant(0.126*mm/MeV);
 
-  // Legacy proto LG bulk (same as PMMA optically); current geometry does not place an LG — material kept for reuse/tests.
+  // Proto light guide: same bulk as PMMA; RINDEX = Polystyrene (scint) to suppress Fresnel at scint–LG boundary
   G4MaterialPropertiesTable* mpProtoLGMatchScint = new G4MaterialPropertiesTable();
   mpProtoLGMatchScint->AddProperty("RINDEX", opEn, RI_PS, nEnt);
   mpProtoLGMatchScint->AddProperty("ABSLENGTH", opEn, AbsLen_PMMA, nEnt);

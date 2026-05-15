@@ -22,7 +22,7 @@ private:
   G4Material* fAir;
   G4Material* fFluoPoly;
   G4Material* fPMMA;
-  /** PMMA-like bulk, RINDEX matched to scint (legacy name `ProtoLG_MatchScint`; current proto has no LG volume). */
+  /** PMMA bulk; RINDEX matched to Polystyrene (proto scint) for index-matched scint–LG interface. */
   G4Material* fProtoLGMatchScint;
   G4Material* fPS;
   G4Material* fCu;

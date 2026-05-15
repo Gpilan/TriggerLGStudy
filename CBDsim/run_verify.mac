@@ -12,4 +12,4 @@
 
 /gun/particle e-
 /gun/energy 500 MeV
-/run/beamOn 10
+/run/beamOn 1

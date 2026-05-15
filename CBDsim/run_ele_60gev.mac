@@ -1,4 +1,4 @@
-# High-stat e- batch: 60 GeV, 1000 events (Proto / stress test)
+# e- batch: 60 GeV, 3000 events (Proto)
 /vis/disable
 /run/numberOfThreads 1
 /run/initialize
@@ -6,4 +6,4 @@
 
 /gun/particle e-
 /gun/energy 60 GeV
-/run/beamOn 1000
+/run/beamOn 3000

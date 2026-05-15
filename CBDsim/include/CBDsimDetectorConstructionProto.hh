@@ -9,9 +9,10 @@
 class G4LogicalVolume;
 
 /**
- * Prototype geometry: plastic scint slab + rectangular SiPM on the 40×5 mm face (normal -y).
- * No light guide; 15 mm × 5 mm window/SiPM stack; Al foil on scint (+ foil strips on -y beside SiPM).
- * Beam along +z crosses the thin (5 mm) z extent; world is vacuum (G4_Galactic). Units: mm.
+ * Prototype geometry (trigger/LG study): plastic scint slab + tessellated light guide.
+ * Beam along +z crosses the thin (5 mm) z extent; world is vacuum (G4_Galactic); Al foil
+ * on scint; LG on the 40x5 mm face (normal -y), extending to -y; SiPM at LG tip (axis y).
+ * readout face (same SD naming as legacy back plane). Units: mm.
  *
  * Only the world logical volume is G4_Galactic; two trigger assemblies (shared LVs, copy 0/1) are placed
  * directly in the world (T2 is Rz(+90 deg)). Along world z, the gap between the two scintillator slabs
@@ -35,6 +36,7 @@ private:
   CBDsimMaterials* fMaterials;
   G4VisAttributes* fVisWorld;
   G4VisAttributes* fVisScint;
+  G4VisAttributes* fVisLG;
   G4VisAttributes* fVisFoil;
   G4VisAttributes* fVisSiPM;
   G4LogicalVolume* fProtoWaferLog = nullptr;

@@ -4,9 +4,8 @@
 ``_cfd_absolute_time``, 기본 fraction=0.3)을 구해 T1·T2 **각각** 히스토그램으로 저장합니다.
 Δt(T1−T2)가 아니라, 들어온 신호(합산 시간 빈)에 대한 CFD 시각 분포만 봅니다.
 
-**기본**: 데이터에서 CFD 최솟값·최댓값을 읽어 **축 범위를 자동**으로 잡고,
-``--bin-width`` (기본 0.02 ns)로 **빈 폭을 작게** 잡아 분포가 한 빈에 몰리지 않게 합니다.
-(이전처럼 ±5 ns 에 10 빈이면 1 ns/빈이라, ns 단위로 거의 같은 CFD는 한 칸에만 들어갈 수 있음.)
+**기본**: 입력 파일당 **PNG 한 개**(1×2: T1 | T2). 데이터 범위는 자동,
+``--bin-width`` (기본 0.01 ns). 각 패널에 **N, μ, σ** 을 한 박스에 넣습니다.
 
 필요: ROOT(PyROOT), ``build/rootIO/librootIO.so``, matplotlib, numpy
 
@@ -14,7 +13,7 @@
   source envset.sh
   export LD_LIBRARY_PATH=$PWD/build/rootIO:$LD_LIBRARY_PATH
   python3 analysis/plot_cfd_per_trigger.py
-  python3 analysis/plot_cfd_per_trigger.py --fixed-range --xmin -5 --xmax 5 --bins 200
+  python3 analysis/plot_cfd_per_trigger.py --fixed-range --xmin -5 --xmax 5 --bins 400
 """
 
 from __future__ import annotations
@@ -124,6 +123,13 @@ def _fixed_axis(xmin: float, xmax: float, bins: int) -> tuple[float, float, int]
     return xmin, xmax, max(1, bins)
 
 
+def _light_guide_title(stem: str) -> str:
+    """파일 stem 으로 light guide 유무 문구 (플롯 제목용)."""
+    if "nolg" in stem.lower():
+        return "Without light guide"
+    return "With light guide"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="단일 ROOT: T1/T2 각각 CFD 시각 분포 (plot_trigger_timing 과 동일 CFD 정의)"
@@ -138,7 +144,7 @@ def main() -> None:
         "-o",
         "--output",
         default=None,
-        help="출력 PNG (기본: figures/cfd_per_trigger_<stem>.png)",
+        help="출력 PNG (기본: figures/cfd_per_trigger_<stem>.png, T1·T2 동시 포함)",
     )
     parser.add_argument(
         "--fixed-range",
@@ -150,15 +156,15 @@ def main() -> None:
     parser.add_argument(
         "--bins",
         type=int,
-        default=200,
-        help="--fixed-range 일 때만 사용 (기본 200)",
+        default=400,
+        help="--fixed-range 일 때만 사용 (기본 400, 더 촘촘한 빈)",
     )
     parser.add_argument(
         "--bin-width",
         type=float,
-        default=0.02,
+        default=0.01,
         dest="bin_width",
-        help="자동 범위일 때 빈 폭 (ns). 작을수록 세밀 (기본 0.02 ns)",
+        help="자동 범위일 때 빈 폭 (ns). 작을수록 세밀 (기본 0.01 ns)",
     )
     parser.add_argument("--ns-per-unit", type=float, default=1.0)
     parser.add_argument(
@@ -207,11 +213,13 @@ def main() -> None:
     )
 
     stem = os.path.splitext(os.path.basename(in_path))[0]
-    out = args.output
-    if not out:
-        out = os.path.join(_figures_dir(repo_root), f"cfd_per_trigger_{stem}.png")
+    fig_dir = _figures_dir(repo_root)
+    if args.output:
+        out = os.path.abspath(args.output)
+        if not os.path.splitext(out)[1]:
+            out += ".png"
     else:
-        out = os.path.abspath(out)
+        out = os.path.join(fig_dir, f"cfd_per_trigger_{stem}.png")
     os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
 
     print(
@@ -238,57 +246,100 @@ def main() -> None:
                 f"std={float(np.std(t2_vals)):.6f}"
             )
 
-        def _panel(ax, vals: list[float], tag: str, bn: str) -> None:
+        guide_line = _light_guide_title(stem)
+
+        def _draw_panel(ax, vals: list[float], trigger_id: str) -> None:
+            """단일 축에 히스토그램·통계(N, μ, σ) 표시."""
+            ax.set_title(trigger_id, fontsize=12.5, fontweight="600", pad=8)
+
             if not vals:
-                ax.text(0.5, 0.5, "no data", ha="center", va="center", transform=ax.transAxes)
-                ax.set_title(f"{tag}\n{bn}")
+                ax.text(
+                    0.5,
+                    0.5,
+                    "no data",
+                    ha="center",
+                    va="center",
+                    transform=ax.transAxes,
+                    fontsize=11,
+                    color="0.45",
+                )
+                ax.set_xlabel("CFD time (ns)", fontsize=10)
+                ax.set_ylabel("events", fontsize=10)
                 return
+
             if args.fixed_range:
                 lo, hi, nb = _fixed_axis(args.xmin, args.xmax, args.bins)
-                mode = f"fixed [{lo:g}, {hi:g}], {nb} bins"
+                mode = f"axis: [{lo:g}, {hi:g}] ns · {nb} bins"
             else:
                 lo, hi, nb = _auto_axis(vals, args.bin_width)
-                mode = f"auto [{lo:.6f}, {hi:.6f}], {nb} bins (~{args.bin_width:g} ns/bin)"
+                mode = (
+                    f"axis: [{lo:.6f}, {hi:.6f}] ns · {nb} bins "
+                    f"(Δ≈{args.bin_width:g} ns)"
+                )
+
             counts, edges = np.histogram(vals, bins=nb, range=(lo, hi))
             ax.stairs(counts, edges, color="black", linewidth=2.0, zorder=2)
-            ax.set_xlabel(
-                f"CFD time (ns), F={args.cfd_fraction:g}×max bin photons\n({mode})"
-            )
-            ax.set_ylabel("events")
-            ax.set_title(f"{tag}\n{bn}")
-            ax.axvline(0.0, color="k", ls="--", lw=0.8, alpha=0.45)
+
             arr = np.asarray(vals, dtype=float)
             mu = float(np.mean(arr))
             sig = float(np.std(arr))
+
+            ax.axvline(0.0, color="k", ls="--", lw=0.85, alpha=0.4, zorder=1)
+            ax.set_xlabel("CFD time (ns)", fontsize=10.5)
+            ax.set_ylabel("events", fontsize=10.5)
+            ax.tick_params(axis="both", labelsize=9)
+            ax.grid(True, axis="y", alpha=0.2, linestyle="-", linewidth=0.55, zorder=0)
+
+            stat_block = (
+                r"$\mathbf{Statistics}$" + "\n\n"
+                rf"$N$     $= {len(vals)}$" + "\n"
+                rf"$\mu$    $= {mu:.4f}$ ns" + "\n"
+                rf"$\sigma$ $= {sig:.4f}$ ns"
+            )
+
             ax.text(
-                0.97,
-                0.97,
-                rf"$N={len(vals)}$"
-                + "\n"
-                + rf"$\mu={mu:.6f}$, $\sigma={sig:.6f}$ ns",
+                0.98,
+                0.98,
+                stat_block,
                 transform=ax.transAxes,
                 fontsize=9,
                 verticalalignment="top",
                 horizontalalignment="right",
+                linespacing=1.35,
                 bbox=dict(
-                    boxstyle="round,pad=0.3",
-                    facecolor="white",
-                    edgecolor="0.75",
-                    alpha=0.95,
+                    boxstyle="round,pad=0.55",
+                    facecolor="#fffefb",
+                    edgecolor="#b0b0b0",
+                    linewidth=1.0,
+                    alpha=0.98,
                 ),
+                zorder=8,
             )
 
-        fig, axes = plt.subplots(1, 2, figsize=(12, 4.5))
-        bn = os.path.basename(in_path)
-        _panel(axes[0], t1_vals, "T1 (trigger 0)", bn)
-        _panel(axes[1], t2_vals, "T2 (trigger 1)", bn)
+            ax.text(
+                0.5,
+                -0.14,
+                f"{mode} · F={args.cfd_fraction:g}× max bin photons",
+                transform=ax.transAxes,
+                ha="center",
+                va="top",
+                fontsize=7.5,
+                color="0.42",
+            )
 
+        fig, axes = plt.subplots(1, 2, figsize=(12.8, 5.2), constrained_layout=False)
+        fig.patch.set_facecolor("white")
         fig.suptitle(
-            "Per-event CFD absolute time (same definition as plot_trigger_timing.py)",
-            fontsize=10,
+            f"{guide_line}\n"
+            f"Per-event CFD time (F={args.cfd_fraction:g}× max bin photons)",
+            fontsize=11.5,
+            fontweight="500",
+            y=0.995,
         )
-        fig.tight_layout()
-        fig.savefig(out, dpi=150)
+        _draw_panel(axes[0], t1_vals, "T1")
+        _draw_panel(axes[1], t2_vals, "T2")
+        fig.tight_layout(rect=[0, 0.02, 1, 0.86])
+        fig.savefig(out, dpi=150, bbox_inches="tight", facecolor="white")
         plt.close(fig)
         print(f"PNG 저장: {out}")
     except ImportError as e:

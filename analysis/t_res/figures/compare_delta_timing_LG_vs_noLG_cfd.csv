@@ -1,3 +1,0 @@
-sample,path,tree_entries_in_file,tree_events_used,matched_N,mu_ns,mu_err_ns,sigma_ns,sigma_err_ns,timing_resolution_ns,timing_resolution_err_ns,delta_hist_entries,skipped_delta
-LG,/u/user/rmsvlf000/Trigger/analysis/t_res/data/60GeV_e-_LG_1.root,3000,3000,True,-0.0195537665857149,0.0026080706243683926,0.13687555267141824,0.003059087484586359,0.09678563147261629,0.0021631015045939124,3000,0
-no_LG,/u/user/rmsvlf000/Trigger/analysis/t_res/data/60GeV_e-_noLG_1.root,3000,3000,True,-0.019017825967085004,0.001283275829822597,0.06833683899522477,0.0013215208287958163,0.04832144225837673,0.0009344563395207882,3000,0

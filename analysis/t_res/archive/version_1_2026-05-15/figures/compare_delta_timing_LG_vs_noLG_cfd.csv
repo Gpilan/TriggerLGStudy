@@ -1,0 +1,3 @@
+sample,path,tree_entries_in_file,tree_events_used,matched_N,hist_mu_ns,hist_sigma_ns,delta_hist_entries,skipped_delta
+LG,/u/user/rmsvlf000/Trigger/analysis/t_res/data/LG_60GeV_e-_LG_1.root,3000,3000,True,-0.01791730537100974,0.1763066540956704,3000,0
+no_LG,/u/user/rmsvlf000/Trigger/analysis/t_res/data/NoLG_60GeV_e-_noLG_1.root,3000,3000,True,-0.0189302790243519,0.07704113438797885,3000,0

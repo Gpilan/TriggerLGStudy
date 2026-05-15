@@ -2,6 +2,28 @@
 
 - **`data/`** — 시뮬레이션 산출 `.root` (깃에는 안 올림; 루트 `.gitignore`의 `*.root`)
 - **`figures/`** — `plot_trigger_timing.py` 기본 PNG 출력
+- **`archive/version_1_2026-05-15/`** — 기존 v1 분석 결과 백업(`data/`, `figures/`)
+
+## 새 ROOT 파일 재분석 준비 (v2)
+
+1. 새 시뮬 결과 `.root` 파일을 `analysis/t_res/data/` 에 복사
+2. 저장소 루트에서 환경 설정
+3. 기존 분석 스크립트를 동일하게 실행
+
+```bash
+source envset.sh
+
+# 기본 타이밍 플롯
+python3 analysis/plot_trigger_timing.py
+
+# LG vs no-LG 비교 (CFD 포함)
+python3 analysis/compare_timing_resolution.py
+
+# 필요 시 추가 분석
+python3 analysis/plot_event_photon_time.py analysis/t_res/data/<new_file>.root --event 0
+python3 analysis/plot_overlay_photon_time.py analysis/t_res/data/<new_file>.root
+python3 analysis/plot_cfd_high_nphoton_timing_ROOT.py analysis/t_res/data/<new_file>.root --fraction 0.3 --mode single --top-events 3
+```
 
 ## 분석
 

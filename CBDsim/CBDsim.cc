@@ -1,6 +1,6 @@
 #include <iostream>
 
-// 1 = prototype scintillator + rectangular SiPM on -y (CBDsimDetectorConstructionProto)
+// 1 = prototype scintillator + tessellated light guide (CBDsimDetectorConstructionProto)
 // 0 = legacy calorimeter tower geometry (CBDsimDetectorConstruction)
 #ifndef CBDsim_USE_PROTO_GEOMETRY
 #define CBDsim_USE_PROTO_GEOMETRY 1

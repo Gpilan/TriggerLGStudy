@@ -143,6 +143,10 @@ G4bool CBDsimSiPMSD::ProcessHits(G4Step* step, G4TouchableHistory*) {
   CBDsimInterface::hitRange timeRange = findTimeRange(hitTime);
   hit->CountTimeStruct(timeRange);
 
+  // One optical photon should contribute once when it enters/steps in wafer.
+  // Kill track here to prevent multiple SD hits from repeated internal stepping/reflections.
+  step->GetTrack()->SetTrackStatus(fStopAndKill);
+
 
   return true;
 }

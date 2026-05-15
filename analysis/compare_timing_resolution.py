@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """
-두 CBDsim .root 를 읽어, `plot_trigger_timing.py` 의 **세 번째 패널(Δt)** 과 동일한
+두 CBDsim .root 를 읽어, `plot_trigger_timing.py` 의 **세 번째 패널(Δt)** 과 같은
 히스토그램을 각각 그리고 가우시안 σ를 구합니다. 기본은 이벤트별 가중 평균 시간 차
-(⟨t⟩_T1 − ⟨t⟩_T2); `--ref cfd` 이면 `plot_trigger_timing.py` 와 같이 CFD 시각 차입니다.
+(⟨t⟩_T1 − ⟨t⟩_T2); ``--ref cfd`` 이면 CFD 시각 차입니다.
 
-**타이밍 레졸루션** (정의): σ / √2  (ns)
+``--ref cfd`` 일 때: merged SiPM 시간 빈을 **먼저 균일 리빈(기본 10 ps)**,
+**선형 보간**으로 빈 중심을 촘촘히 만든 뒤 그 시퀀스로 CFD 시각을 계산합니다.
+Δt 히스토그램 기본 범위는 **−2 ~ 2 ns** (``--xmin`` / ``--xmax`` / ``--bins`` 로 조절).
 
 산출:
-  - `analysis/t_res/figures/` 에 비교 PNG (1×2 패널, Δt + Gauss 피트)
-  - 동일 stem 의 `.csv` (σ, σ_err, μ, μ_err, timing_resolution_ns 등)
+  - `analysis/t_res/figures/` 에 비교 PNG (1×2 패널, Δt 히스토그램만)
+  - 동일 stem 의 `.csv` (엔트리 수, 스킵 등; Gauss 피팅 없음)
 
 필요: ROOT(PyROOT), `build/rootIO/librootIO.so`, numpy, matplotlib
 
@@ -33,7 +35,6 @@ import sys
 
 # plot_trigger_timing 과 동일 디렉터리에서 헬퍼 재사용
 from plot_trigger_timing import (
-    _cfd_absolute_time,
     _figures_dir,
     _find_repo_root,
     _load_rootio,
@@ -43,7 +44,109 @@ from plot_trigger_timing import (
     _weighted_mean_absolute,
 )
 
-SQRT2 = math.sqrt(2.0)
+
+def _cfd_absolute_time_float(
+    lows: list[float],
+    highs: list[float],
+    counts: list[float],
+    fraction: float,
+    scale: float,
+) -> float | None:
+    """``_cfd_absolute_time`` 과 동일 정의; 빈 카운트는 실수 가능."""
+    if not counts:
+        return None
+    n_max = max(counts)
+    if n_max <= 0:
+        return None
+    thr = float(fraction) * float(n_max)
+    if thr <= 0:
+        return None
+    idx = list(range(len(counts)))
+    idx.sort(key=lambda i: 0.5 * (float(lows[i]) + float(highs[i])))
+    cum = 0.0
+    for i in idx:
+        c = float(counts[i])
+        if c <= 0:
+            continue
+        t_lo = float(lows[i])
+        t_hi = float(highs[i])
+        cum_prev = cum
+        cum += c
+        if cum >= thr:
+            need = thr - cum_prev
+            frac_in_bin = need / c if c > 0 else 0.0
+            frac_in_bin = max(0.0, min(1.0, frac_in_bin))
+            t_abs = t_lo + frac_in_bin * (t_hi - t_lo)
+            return float(t_abs * scale)
+    return None
+
+
+def _rebin_merged_to_width(
+    lo: list[float],
+    hi: list[float],
+    counts: list[float],
+    bin_width_ns: float,
+) -> tuple[list[float], list[float], list[float]]:
+    """원래 빈을 겹침 비율로 나누어 균일 폭(예: 10 ps) 빈으로 합침."""
+    import numpy as np
+
+    if not counts:
+        return [], [], []
+    active = [i for i, c in enumerate(counts) if float(c) > 0.0]
+    if not active:
+        return lo, hi, [float(c) for c in counts]
+    t_min = min(float(lo[i]) for i in active)
+    t_max = max(float(hi[i]) for i in active)
+    t_min -= bin_width_ns
+    t_max += bin_width_ns
+    if t_max <= t_min or bin_width_ns <= 0:
+        return lo, hi, [float(c) for c in counts]
+    edges = np.arange(t_min, t_max + bin_width_ns, bin_width_ns, dtype=float)
+    if edges[-1] < t_max:
+        edges = np.append(edges, t_max)
+    nbin = len(edges) - 1
+    new_counts = np.zeros(nbin, dtype=float)
+    for blo, bhi, c in zip(lo, hi, counts):
+        cf = float(c)
+        if cf <= 0:
+            continue
+        bw = float(bhi) - float(blo)
+        if bw <= 0:
+            continue
+        blo, bhi = float(blo), float(bhi)
+        j0 = max(0, int(np.searchsorted(edges, blo, side="right") - 1))
+        j1 = min(nbin, int(np.searchsorted(edges, bhi, side="left")))
+        for j in range(j0, j1):
+            e0, e1 = float(edges[j]), float(edges[j + 1])
+            olo = max(blo, e0)
+            ohi = min(bhi, e1)
+            ov = max(0.0, ohi - olo)
+            if ov > 0:
+                new_counts[j] += cf * ov / bw
+    new_lo = [float(edges[i]) for i in range(nbin)]
+    new_hi = [float(edges[i + 1]) for i in range(nbin)]
+    return new_lo, new_hi, new_counts.tolist()
+
+
+def _interpolate_counts_linear(
+    lo: list[float],
+    hi: list[float],
+    counts: list[float],
+) -> tuple[list[float], list[float], list[float]]:
+    """빈 중심에서 선형 보간해 빈 개수를 약 2배로 촘촘히 (CFD 경계 보간용)."""
+    import numpy as np
+
+    if len(counts) < 2:
+        return lo, hi, [float(x) for x in counts]
+    centers = 0.5 * (np.array(lo, dtype=float) + np.array(hi, dtype=float))
+    c = np.array(counts, dtype=float)
+    n_out = 2 * len(centers) - 1
+    new_centers = np.linspace(float(centers[0]), float(centers[-1]), n_out)
+    new_c = np.interp(new_centers, centers, c)
+    dc = float(new_centers[1] - new_centers[0])
+    new_lo = (new_centers - 0.5 * dc).tolist()
+    new_hi = (new_centers + 0.5 * dc).tolist()
+    return new_lo, new_hi, new_c.tolist()
 
 
 def _fill_delta_hist(
@@ -58,10 +161,14 @@ def _fill_delta_hist(
     hist_title: str,
     ref_mode: str = "mean",
     cfd_fraction: float = 0.3,
+    cfd_input_bin_ns: float = 0.01,
+    cfd_interp: bool = True,
 ) -> tuple[object, int, int]:
     """ROOT TH1F(Δt) 반환. (histogram, n_used_events, skipped_delta).
 
-    ref_mode ``mean``: 가중 평균 절대시간 차. ``cfd``: ``plot_trigger_timing`` 과 동일 CFD.
+    ref_mode ``mean``: 가중 평균 절대시간 차.
+    ``cfd``: merged 빈을 ``cfd_input_bin_ns`` 로 리빈 후(기본 10 ps),
+    옵션 선형 보간 뒤 ``_cfd_absolute_time_float`` 로 CFD.
     """
     import ROOT
 
@@ -96,8 +203,13 @@ def _fill_delta_hist(
         lo1, hi1, cnt1 = _merged_from_tower(evt, 0)
         lo2, hi2, cnt2 = _merged_from_tower(evt, 1)
         if ref_mode == "cfd":
-            mu1 = _cfd_absolute_time(lo1, hi1, cnt1, cfd_fraction, ns_per_unit)
-            mu2 = _cfd_absolute_time(lo2, hi2, cnt2, cfd_fraction, ns_per_unit)
+            lo1, hi1, cnt1 = _rebin_merged_to_width(lo1, hi1, cnt1, cfd_input_bin_ns)
+            lo2, hi2, cnt2 = _rebin_merged_to_width(lo2, hi2, cnt2, cfd_input_bin_ns)
+            if cfd_interp:
+                lo1, hi1, cnt1 = _interpolate_counts_linear(lo1, hi1, cnt1)
+                lo2, hi2, cnt2 = _interpolate_counts_linear(lo2, hi2, cnt2)
+            mu1 = _cfd_absolute_time_float(lo1, hi1, cnt1, cfd_fraction, ns_per_unit)
+            mu2 = _cfd_absolute_time_float(lo2, hi2, cnt2, cfd_fraction, ns_per_unit)
         else:
             mu1 = _weighted_mean_absolute(lo1, hi1, cnt1, ns_per_unit)
             mu2 = _weighted_mean_absolute(lo2, hi2, cnt2, ns_per_unit)
@@ -127,40 +239,16 @@ def _cbdsim_tree_entries(path: str) -> int:
     return n
 
 
-def _fit_gaus_delta(h, ROOT, tag: str) -> dict | None:
-    """ROOT TF1 gaus 피팅. 실패 시 None."""
-    xmin = float(h.GetXaxis().GetXmin())
-    xmax = float(h.GetXaxis().GetXmax())
-    if h.GetSumOfWeights() <= 0:
-        return None
-    fitfn = ROOT.TF1(f"fit_delta_gaus_{tag}", "gaus", xmin, xmax)
-    fitfn.SetNpx(500)
-    fitfn.SetParameter(0, float(h.GetMaximum()))
-    fitfn.SetParameter(1, float(h.GetMean()))
-    fitfn.SetParameter(2, max(float(h.GetRMS()), 1e-6))
-    h.Fit(fitfn, "QN", "", xmin, xmax)
-    return {
-        "mu": float(fitfn.GetParameter(1)),
-        "mu_err": float(fitfn.GetParError(1)),
-        "sigma": float(fitfn.GetParameter(2)),
-        "sigma_err": float(fitfn.GetParError(2)),
-        "fitfn": fitfn,
-    }
-
-
 def _plot_pair_mpl(
     axes,
     h_a,
-    fit_a: dict | None,
     label_a: str,
     h_b,
-    fit_b: dict | None,
     label_b: str,
     ns_per_unit: float,
     *,
     ref_mode: str = "mean",
 ) -> None:
-    import matplotlib.pyplot as plt
     import numpy as np
 
     def hist_xy(h):
@@ -168,32 +256,14 @@ def _plot_pair_mpl(
         cy = np.array([h.GetBinContent(b) for b in range(1, h.GetNbinsX() + 1)])
         return cx, cy
 
-    def _gauss(x, a, mu, sigma):
-        return a * np.exp(-0.5 * ((x - mu) / sigma) ** 2)
-
-    for ax, h, fit, title in (
-        (axes[0], h_a, fit_a, label_a),
-        (axes[1], h_b, fit_b, label_b),
+    for ax, h, title in (
+        (axes[0], h_a, label_a),
+        (axes[1], h_b, label_b),
     ):
         x, y = hist_xy(h)
         w = (x[1] - x[0]) if len(x) > 1 else 0.1
         edges = np.linspace(float(x[0]) - w / 2, float(x[-1]) + w / 2, len(x) + 1)
-        ax.stairs(y, edges, color="black", linewidth=2.0, zorder=2)
-        if fit is not None:
-            xf = np.linspace(float(x.min()), float(x.max()), 300)
-            p = fit["fitfn"]
-            ax.plot(
-                xf,
-                _gauss(xf, p.GetParameter(0), p.GetParameter(1), p.GetParameter(2)),
-                color="red",
-                ls="--",
-                lw=2.0,
-                zorder=3,
-            )
-        sig = fit["sigma"] if fit else float(h.GetRMS())
-        sig_e = fit["sigma_err"] if fit else 0.0
-        tres = sig / SQRT2
-        tres_e = sig_e / SQRT2
+        ax.stairs(y, edges, color="#1f77b4", linewidth=2.0, zorder=2)
         if ref_mode == "cfd":
             xl = (
                 r"$\mathrm{CFD}_{T1} - \mathrm{CFD}_{T2}$ (ns)"
@@ -208,10 +278,12 @@ def _plot_pair_mpl(
         ax.set_ylabel("events")
         ax.set_title(title)
         ax.axvline(0.0, color="k", ls="--", lw=0.8, alpha=0.5)
+        mu_h = float(h.GetMean())
+        sigma_h = float(h.GetRMS())
         lines = [
-            rf"$N={int(h.GetEntries())}$",
-            rf"Gauss $\sigma={sig:.4f}\pm{sig_e:.4f}$ ns",
-            rf"timing res. $=\sigma/\sqrt{{2}}={tres:.4f}\pm{tres_e:.4f}$ ns",
+            rf"Entries = {int(h.GetEntries())}",
+            rf"Mean = {mu_h:.4f} ns",
+            rf"Std Dev = {sigma_h:.4f} ns",
         ]
         ax.text(
             0.97,
@@ -227,7 +299,7 @@ def _plot_pair_mpl(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="두 ROOT 의 Δt(패널 3 동일) 비교 + σ/√2 타이밍 레졸루션"
+        description="두 ROOT 의 Δt 히스토그램 비교 (CFD: 10 ps 리빈·보간 후 CFD; Gauss 피팅 없음)"
     )
     parser.add_argument(
         "with_lg",
@@ -264,13 +336,23 @@ def main() -> None:
         action="store_true",
         help="트리 엔트리 수를 맞추지 않고 각 파일 전체 사용",
     )
-    parser.add_argument("--xmin", type=float, default=-5.0)
-    parser.add_argument("--xmax", type=float, default=5.0)
+    parser.add_argument(
+        "--xmin",
+        type=float,
+        default=-2.0,
+        help="Δt 히스토그램 하한 (ns, 기본 -2)",
+    )
+    parser.add_argument(
+        "--xmax",
+        type=float,
+        default=2.0,
+        help="Δt 히스토그램 상한 (ns, 기본 2)",
+    )
     parser.add_argument(
         "--bins",
         type=int,
-        default=10,
-        help="히스토그램 빈 수 (기본 10: --xmin/--xmax 기본 ±5 ns 일 때 빈 폭 약 1 ns)",
+        default=400,
+        help="Δt 히스토그램 빈 수 (기본 400, ±2 ns → 약 10 ps/빈)",
     )
     parser.add_argument("--delta-xmin", type=float, default=None)
     parser.add_argument("--delta-xmax", type=float, default=None)
@@ -288,6 +370,18 @@ def main() -> None:
         default=0.3,
         dest="cfd_fraction",
         help="--ref cfd 일 때 임계 = F × (최대 빈 포톤 수) (기본 0.3)",
+    )
+    parser.add_argument(
+        "--cfd-input-bin-ps",
+        type=float,
+        default=10.0,
+        dest="cfd_input_bin_ps",
+        help="--ref cfd 일 때 merged 시간축 리빈 폭 (ps, 기본 10)",
+    )
+    parser.add_argument(
+        "--no-cfd-interp",
+        action="store_true",
+        help="--ref cfd 일 때 리빈 후 선형 보간 생략",
     )
     parser.add_argument("-l", "--rootio-lib", default=None)
     args = parser.parse_args()
@@ -353,6 +447,8 @@ def main() -> None:
         title_lg = "LG: #LT t#GT_{T1}-#LT t#GT_{T2};ns;events"
         title_nlg = "no LG: #LT t#GT_{T1}-#LT t#GT_{T2};ns;events"
 
+    cfd_input_bin_ns = args.cfd_input_bin_ps / 1000.0
+
     h_lg, n_lg, sk_lg = _fill_delta_hist(
         path_lg,
         max_events=max_ev_lg,
@@ -364,6 +460,8 @@ def main() -> None:
         hist_title=title_lg,
         ref_mode=args.ref,
         cfd_fraction=args.cfd_fraction,
+        cfd_input_bin_ns=cfd_input_bin_ns,
+        cfd_interp=not args.no_cfd_interp,
     )
     h_nlg, n_nlg, sk_nlg = _fill_delta_hist(
         path_nlg,
@@ -376,23 +474,9 @@ def main() -> None:
         hist_title=title_nlg,
         ref_mode=args.ref,
         cfd_fraction=args.cfd_fraction,
+        cfd_input_bin_ns=cfd_input_bin_ns,
+        cfd_interp=not args.no_cfd_interp,
     )
-
-    fit_lg = _fit_gaus_delta(h_lg, ROOT, "lg")
-    fit_nlg = _fit_gaus_delta(h_nlg, ROOT, "nlg")
-
-    if fit_lg:
-        print(
-            "  [LG]     Gauss: "
-            f"μ = {fit_lg['mu']:.6f} ± {fit_lg['mu_err']:.6f} ns, "
-            f"σ = {fit_lg['sigma']:.6f} ± {fit_lg['sigma_err']:.6f} ns"
-        )
-    if fit_nlg:
-        print(
-            "  [no LG]  Gauss: "
-            f"μ = {fit_nlg['mu']:.6f} ± {fit_nlg['mu_err']:.6f} ns, "
-            f"σ = {fit_nlg['sigma']:.6f} ± {fit_nlg['sigma_err']:.6f} ns"
-        )
 
     stem = "compare_delta_timing_LG_vs_noLG"
     if args.ref == "cfd":
@@ -413,10 +497,10 @@ def main() -> None:
 
     rows = []
     meta = (
-        ("LG", path_lg, fit_lg, n_lg, sk_lg, n_lg_tree, max_ev_lg),
-        ("no_LG", path_nlg, fit_nlg, n_nlg, sk_nlg, n_nlg_tree, max_ev_nlg),
+        ("LG", path_lg, h_lg, n_lg, sk_lg, n_lg_tree, max_ev_lg),
+        ("no_LG", path_nlg, h_nlg, n_nlg, sk_nlg, n_nlg_tree, max_ev_nlg),
     )
-    for tag, path, fit, n_ent, sk, n_tree, n_used in meta:
+    for tag, path, h_hist, n_ent, sk, n_tree, n_used in meta:
         row: dict[str, str | float | int] = {
             "sample": tag,
             "path": path,
@@ -425,21 +509,9 @@ def main() -> None:
             "matched_N": (not args.no_match_entries),
             "delta_hist_entries": n_ent,
             "skipped_delta": sk,
+            "hist_mu_ns": float(h_hist.GetMean()),
+            "hist_sigma_ns": float(h_hist.GetRMS()),
         }
-        if fit:
-            row["mu_ns"] = fit["mu"]
-            row["mu_err_ns"] = fit["mu_err"]
-            row["sigma_ns"] = fit["sigma"]
-            row["sigma_err_ns"] = fit["sigma_err"]
-            row["timing_resolution_ns"] = fit["sigma"] / SQRT2
-            row["timing_resolution_err_ns"] = fit["sigma_err"] / SQRT2
-        else:
-            row["mu_ns"] = ""
-            row["mu_err_ns"] = ""
-            row["sigma_ns"] = ""
-            row["sigma_err_ns"] = ""
-            row["timing_resolution_ns"] = ""
-            row["timing_resolution_err_ns"] = ""
         rows.append(row)
 
     fieldnames = [
@@ -448,12 +520,8 @@ def main() -> None:
         "tree_entries_in_file",
         "tree_events_used",
         "matched_N",
-        "mu_ns",
-        "mu_err_ns",
-        "sigma_ns",
-        "sigma_err_ns",
-        "timing_resolution_ns",
-        "timing_resolution_err_ns",
+        "hist_mu_ns",
+        "hist_sigma_ns",
         "delta_hist_entries",
         "skipped_delta",
     ]
@@ -471,31 +539,15 @@ def main() -> None:
         import matplotlib.pyplot as plt
 
         fig, axes = plt.subplots(1, 2, figsize=(12, 4.2))
-        bn_lg = os.path.basename(path_lg)
-        bn_nlg = os.path.basename(path_nlg)
         _plot_pair_mpl(
             axes,
             h_lg,
-            fit_lg,
-            f"LG (Δt)\n{bn_lg}",
+            r"w\ Light guide (Δt)",
             h_nlg,
-            fit_nlg,
-            f"no LG (Δt)\n{bn_nlg}",
+            r"w\o Light guide (Δt)",
             args.ns_per_unit,
             ref_mode=args.ref,
         )
-        if args.ref == "cfd":
-            fig.suptitle(
-                r"Per-event $\mathrm{CFD}_{T1}-\mathrm{CFD}_{T2}$ "
-                rf"(frac={args.cfd_fraction}$\times$max bin; timing res. $=\sigma/\sqrt{{2}}$)",
-                fontsize=11,
-            )
-        else:
-            fig.suptitle(
-                r"Per-event $\langle t\rangle_{\mathrm{T1}}-\langle t\rangle_{\mathrm{T2}}$ "
-                r"(timing res. $=\sigma/\sqrt{2}$)",
-                fontsize=11,
-            )
         fig.tight_layout()
         fig.savefig(out_png, dpi=150)
         print(f"PNG 저장: {out_png}")

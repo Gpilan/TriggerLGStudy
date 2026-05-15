@@ -12,36 +12,126 @@
 #include "G4SolidStore.hh"
 #include "G4LogicalSkinSurface.hh"
 #include "G4LogicalBorderSurface.hh"
+#include "G4TessellatedSolid.hh"
+#include "G4TriangularFacet.hh"
+#include "G4Tubs.hh"
 #include "G4NistManager.hh"
 #include "G4SDManager.hh"
 
 #include "CBDsimSiPMSD.hh"
 
+#include <algorithm>
+#include <cmath>
+#include <vector>
+
 namespace {
-// Beam +z through thin z (5 mm). Scint 40×60 mm (half 20×30 mm in x,y), thin z half = 2.5 mm (5 mm full).
+// Beam +z through thin z (5 mm). LG couples to 40x5 mm face (x-z plane, -y face), extends to -y.
 constexpr G4double kHxWide = 20.0 * mm;
 constexpr G4double kHyLong = 30.0 * mm;
 constexpr G4double kHzThin = 2.5 * mm;
-/** Rectangular SiPM + window on -y face: 15 mm (x) × 5 mm (z), centered on tile. */
-constexpr G4double kSipmHalfX = 7.5 * mm;
-constexpr G4double kSipmHalfZ = kHzThin;
-/** Vacuum gap between scint -y face and SiPM window (0 = flush). */
-constexpr G4double kSiPMAirGap = 0.0 * mm;
+constexpr G4double kLguide = 30.0 * mm;
+/** LG outlet circle radius (fits inside 40x60 mm coupling face). */
+constexpr G4double kRguide = 7.5 * mm;
+constexpr G4int kNPhi = 64;
+constexpr G4int kNSlice = 20;
+/**
+ * y-offset between PS bottom and LG top. Set to 0 (flush) with vacuum world: no n≠1 layer between
+ * scint and LG for optics. If GeomNav1002 increases at coplanar boundaries, restore a μm gap.
+ */
+constexpr G4double kLGZGap = 0.0 * mm;
+/** y gap between LG tip and SiPM package (LG tessellated cap vs G4Tubs). 0 = flush in vacuum. */
+constexpr G4double kSiPMLGAirGap = 0.0 * mm;
 
-/** Z-offset margin: keeps trigger assemblies off z=0 in world coordinates. */
+/** Z-offset margin (same role as before outer-air removal): keeps trigger assemblies off z=0 in world coordinates. */
 constexpr G4double kOuterAirSafetyMargin = 1.0 * mm;
 
+// Match legacy tower wrapping (CBDsimDetectorConstruction)
 constexpr G4double kFoilT = 0.016 * mm;
+/** Inset from nominal foil half-extents so adjacent foil boxes do not share corner volume (avoids ~um overlaps). */
 constexpr G4double kFoilCornerInset = 0.02 * mm;
 constexpr G4double kAirGap = 0.01 * mm;
+constexpr G4double kEnvMarginXY = 2.0 * mm;
+/** Used with hzEnvThin to set hzEnv (LG tip radius in local z). */
 constexpr G4double kEnvMarginZ = 0.1 * mm;
+/**
+ * Clear gap along world z between the two scintillator tiles (beam +z through thin z).
+ * Tile z full thickness = 2*kHzThin. Center separation must be at least that; we use
+ * 2*kHzThin + kTrig12TileFaceGapZ so the slabs do not overlap.
+ */
 constexpr G4double kTrig12TileFaceGapZ = 1.0 * mm;
+/** |kZTrig2 - kZTrig1| = distance between scintillator centers along z. */
 constexpr G4double kTrig12TileCenterSeparationZ = 2.0 * kHzThin + kTrig12TileFaceGapZ;
+// SiPM package (match CBDsimDetectorConstruction front stack thicknesses)
 constexpr G4double kSiPMH = 0.3 * mm;
 constexpr G4double kFilterT = 0.01 * mm;
 
-/** Half-width in x of each Al strip on -y beside the SiPM (one gap = kHxWide − kSipmHalfX → half = half gap). */
-constexpr G4double kFoilYmStripHalfX = 0.5 * (kHxWide - kSipmHalfX);
+void rectBoundaryXZ(G4double phi, G4double hx, G4double hz, G4double& px, G4double& pz) {
+  const G4double c = std::cos(phi);
+  const G4double s = std::sin(phi);
+  G4double scale;
+  if (std::fabs(c) < 1e-12) {
+    scale = hz / std::fabs(s);
+  } else if (std::fabs(s) < 1e-12) {
+    scale = hx / std::fabs(c);
+  } else {
+    scale = std::min(hx / std::fabs(c), hz / std::fabs(s));
+  }
+  px = scale * c;
+  pz = scale * s;
+}
+
+G4TessellatedSolid* BuildLightGuideTessellated() {
+  auto* ts = new G4TessellatedSolid("ProtoLightGuide");
+
+  const G4int nRings = kNSlice + 1;
+  std::vector<G4ThreeVector> v;
+  v.reserve(static_cast<size_t>(nRings * kNPhi));
+
+  for (G4int i = 0; i < nRings; ++i) {
+    const G4double t = static_cast<G4double>(i) / static_cast<G4double>(kNSlice);
+    const G4double y = -kHyLong - kLGZGap - t * kLguide;
+    for (G4int j = 0; j < kNPhi; ++j) {
+      const G4double phi = twopi * static_cast<G4double>(j) / static_cast<G4double>(kNPhi);
+      G4double rx, rz;
+      rectBoundaryXZ(phi, kHxWide, kHzThin, rx, rz);
+      const G4double cx = kRguide * std::cos(phi);
+      const G4double cz = kRguide * std::sin(phi);
+      const G4double px = (1.0 - t) * rx + t * cx;
+      const G4double pz = (1.0 - t) * rz + t * cz;
+      v.emplace_back(px, y, pz);
+    }
+  }
+
+  auto idx = [](G4int ring, G4int j) { return static_cast<size_t>(ring * kNPhi + j); };
+
+  for (G4int i = 0; i < kNSlice; ++i) {
+    for (G4int j = 0; j < kNPhi; ++j) {
+      const G4int jp = (j + 1) % kNPhi;
+      const G4ThreeVector& a = v[idx(i, j)];
+      const G4ThreeVector& b = v[idx(i, jp)];
+      const G4ThreeVector& c = v[idx(i + 1, jp)];
+      const G4ThreeVector& d = v[idx(i + 1, j)];
+      // Quad a–b / d–c: outward normals for positive enclosed volume (GeomSolids1001 if wrong).
+      ts->AddFacet(new G4TriangularFacet(a, b, c, ABSOLUTE));
+      ts->AddFacet(new G4TriangularFacet(a, c, d, ABSOLUTE));
+    }
+  }
+
+  const G4ThreeVector cbot(0.0, -kHyLong - kLGZGap, 0.0);
+  for (G4int j = 0; j < kNPhi; ++j) {
+    const G4int jp = (j + 1) % kNPhi;
+    ts->AddFacet(new G4TriangularFacet(cbot, v[idx(0, jp)], v[idx(0, j)], ABSOLUTE));
+  }
+
+  const G4ThreeVector ctop(0.0, -kHyLong - kLGZGap - kLguide, 0.0);
+  for (G4int j = 0; j < kNPhi; ++j) {
+    const G4int jp = (j + 1) % kNPhi;
+    ts->AddFacet(new G4TriangularFacet(ctop, v[idx(kNSlice, j)], v[idx(kNSlice, jp)], ABSOLUTE));
+  }
+
+  ts->SetSolidClosed(true);
+  return ts;
+}
 
 }  // namespace
 
@@ -50,6 +140,8 @@ CBDsimDetectorConstructionProto::CBDsimDetectorConstructionProto() {
   fVisWorld = new G4VisAttributes(false);
   fVisScint = new G4VisAttributes(G4Colour(0.2, 0.6, 1.0, 1.0));
   fVisScint->SetVisibility(true);
+  fVisLG = new G4VisAttributes(G4Colour(1.0, 0.65, 0.2, 1.0));
+  fVisLG->SetVisibility(true);
   fVisFoil = new G4VisAttributes(G4Colour(1.0, 0.5, 0.0, 1.0));
   fVisFoil->SetVisibility(true);
   fVisSiPM = new G4VisAttributes(G4Colour(0.3, 0.7, 0.3));
@@ -59,6 +151,7 @@ CBDsimDetectorConstructionProto::CBDsimDetectorConstructionProto() {
 CBDsimDetectorConstructionProto::~CBDsimDetectorConstructionProto() {
   delete fVisWorld;
   delete fVisScint;
+  delete fVisLG;
   delete fVisFoil;
   delete fVisSiPM;
 }
@@ -83,7 +176,7 @@ G4VPhysicalVolume* CBDsimDetectorConstructionProto::Construct() {
   worldLog->SetVisAttributes(fVisWorld);
 
   const G4double hzEnvThin = kHzThin + kAirGap + kFoilT + kEnvMarginZ;
-  const G4double hzEnv = hzEnvThin;
+  const G4double hzEnv = std::max(hzEnvThin, kRguide + kEnvMarginZ);
 
   // Half the z distance between T1 and T2 tile (scint) centers: |kZTrig2 - kZTrig1| = 2 * kEnvZHalfSep.
   const G4double kEnvZHalfSep = 0.5 * kTrig12TileCenterSeparationZ;
@@ -110,28 +203,37 @@ G4VPhysicalVolume* CBDsimDetectorConstructionProto::Construct() {
   new G4PVPlacement(trWorld2(G4Transform3D()), scintLog, "protoScintPhys", worldLog, false, 1);
   scintLog->SetVisAttributes(fVisScint);
 
-  // SiPM: rectangular box on -y face; rotateX(-90°) maps local +z (stack axis) to world -y (toward scint +y).
+  G4TessellatedSolid* lgSolid = BuildLightGuideTessellated();
+  auto* lgLog =
+      new G4LogicalVolume(lgSolid, FindMaterial("ProtoLG_MatchScint"), "protoLightGuideLog");
+  auto* lgPV1 = new G4PVPlacement(trWorld1(G4Transform3D()), lgLog, "protoLightGuidePhys", worldLog, false, 0);
+  auto* lgPV2 = new G4PVPlacement(trWorld2(G4Transform3D()), lgLog, "protoLightGuidePhys", worldLog, false, 1);
+  lgLog->SetVisAttributes(fVisLG);
+
+  // SiPM: G4Tubs on z; rotateX(-90°) maps local +z to world +y (window toward LG at +y).
   G4RotationMatrix sipmRot;
   sipmRot.rotateX(-halfpi);
-  const G4double ySipmCenter = -kHyLong - kSiPMAirGap - kSiPMH * 0.5;
+  const G4double yLgTip = -kHyLong - kLGZGap - kLguide;
+  const G4double ySipmCenter = yLgTip - kSiPMH * 0.5 - kSiPMLGAirGap;
 
-  auto* sipmEnvS =
-      new G4Box("protoSipmEnv", kSipmHalfX, kSipmHalfZ, kSiPMH * 0.5);
+  auto* sipmEnvS = new G4Tubs("protoSipmEnv", 0., kRguide, kSiPMH * 0.5, 0., twopi);
   auto* sipmEnvLog =
       new G4LogicalVolume(sipmEnvS, FindMaterial("G4_Galactic"), "protoSipmEnvLog");
   sipmEnvLog->SetVisAttributes(fVisWorld);
 
-  auto* sipmWindowS = new G4Box(
-      "protoSipmWindow", kSipmHalfX, kSipmHalfZ, (kSiPMH - kFilterT) * 0.5);
+  auto* sipmWindowS =
+      new G4Tubs("protoSipmWindow", 0., kRguide, (kSiPMH - kFilterT) * 0.5, 0., twopi);
   auto* sipmWindowLog = new G4LogicalVolume(sipmWindowS, FindMaterial("Glass"), "protoSipmWindowLog");
   new G4PVPlacement(nullptr, {0., 0., kFilterT * 0.5}, sipmWindowLog, "protoSipmWindowPhys", sipmEnvLog,
                     false, 0);
 
-  auto* sipmWaferS = new G4Box("protoSipmWafer", kSipmHalfX, kSipmHalfZ, kFilterT * 0.5);
+  auto* sipmWaferS = new G4Tubs("protoSipmWafer", 0., kRguide, kFilterT * 0.5, 0., twopi);
   auto* sipmWaferLog =
       new G4LogicalVolume(sipmWaferS, FindMaterial("SiPM_WaferSilicon"), "protoSipmWaferLog");
-  new G4PVPlacement(nullptr, {0., 0., -(kSiPMH - kFilterT) * 0.5}, sipmWaferLog, "protoSipmWaferPhys",
-                    sipmEnvLog, false, 0);
+  auto* sipmWaferPV =
+      new G4PVPlacement(nullptr, {0., 0., -(kSiPMH - kFilterT) * 0.5}, sipmWaferLog, "protoSipmWaferPhys",
+                        sipmEnvLog, false, 0);
+  // No LogicalSkinSurface on wafer: glass|Si uses bulk RINDEX; dielectric_metal skin was fighting SD steps.
   sipmWaferLog->SetVisAttributes(fVisSiPM);
   fProtoWaferLog = sipmWaferLog;
 
@@ -169,18 +271,31 @@ G4VPhysicalVolume* CBDsimDetectorConstructionProto::Construct() {
   foilYpLog->SetVisAttributes(fVisFoil);
   new G4LogicalSkinSurface("protoAlSurfYp", foilYpLog, FindSurface("AluminumSurf"));
 
-  const G4double yFoilMinus = -kHyLong - kAirGap - ft2;
-  const G4double xLeftYm = -0.5 * (kHxWide + kSipmHalfX);
-  const G4double xRightYm = 0.5 * (kHxWide + kSipmHalfX);
-  auto* foilYmStripS = new G4Box("protoFoilYmStrip", kFoilYmStripHalfX, ft2, zhF);
-  auto* foilYmStripLog = new G4LogicalVolume(foilYmStripS, FindMaterial("Aluminum"), "protoFoilYmStripLog");
-  foilYmStripLog->SetVisAttributes(fVisFoil);
-  new G4LogicalSkinSurface("protoAlSurfYmStrip", foilYmStripLog, FindSurface("AluminumSurf"));
-
   {
     const G4Transform3D localSipm(G4Transform3D(sipmRot, G4ThreeVector(0., ySipmCenter, 0.)));
-    new G4PVPlacement(trWorld1(localSipm), sipmEnvLog, "protoSipmEnvPhys", worldLog, false, 0);
-    new G4PVPlacement(trWorld2(localSipm), sipmEnvLog, "protoSipmEnvPhys", worldLog, false, 1);
+    auto* sipmPV1 =
+        new G4PVPlacement(trWorld1(localSipm), sipmEnvLog, "protoSipmEnvPhys", worldLog, false, 0);
+    auto* sipmPV2 =
+        new G4PVPlacement(trWorld2(localSipm), sipmEnvLog, "protoSipmEnvPhys", worldLog, false, 1);
+
+    // LG side reflection:
+    // Apply reflective border only for LG<->world pair (AluminumSurf). This avoids changing
+    // LG<->SiPM coupling where photons should transmit into the window.
+    new G4LogicalBorderSurface("protoLG1ToWorldReflect", lgPV1, worldPhys, FindSurface("AluminumSurf"));
+    new G4LogicalBorderSurface("protoWorldToLG1Reflect", worldPhys, lgPV1, FindSurface("AluminumSurf"));
+    new G4LogicalBorderSurface("protoLG2ToWorldReflect", lgPV2, worldPhys, FindSurface("AluminumSurf"));
+    new G4LogicalBorderSurface("protoWorldToLG2Reflect", worldPhys, lgPV2, FindSurface("AluminumSurf"));
+
+    // Keep LG<->SiPM interface non-reflective (dielectric-dielectric) so the tip can couple out.
+    new G4LogicalBorderSurface("protoLG1ToSiPM1Trans", lgPV1, sipmPV1, FindSurface("AirSurf"));
+    new G4LogicalBorderSurface("protoSiPM1ToLG1Trans", sipmPV1, lgPV1, FindSurface("AirSurf"));
+    new G4LogicalBorderSurface("protoLG2ToSiPM2Trans", lgPV2, sipmPV2, FindSurface("AirSurf"));
+    new G4LogicalBorderSurface("protoSiPM2ToLG2Trans", sipmPV2, lgPV2, FindSurface("AirSurf"));
+
+    // Behind/side of detection region: absorb photons exiting wafer into SiPM env to prevent
+    // back-bounce fake timing/counting tails. (SiPMSurf reflectivity=0, dielectric_metal)
+    new G4LogicalBorderSurface("protoWaferToSiPM1Absorb", sipmWaferPV, sipmPV1, FindSurface("SiPMSurf"));
+    new G4LogicalBorderSurface("protoWaferToSiPM2Absorb", sipmWaferPV, sipmPV2, FindSurface("SiPMSurf"));
   }
   {
     const G4Transform3D tx(G4RotationMatrix(), G4ThreeVector(-xh, 0., 0.));
@@ -198,13 +313,13 @@ G4VPhysicalVolume* CBDsimDetectorConstructionProto::Construct() {
     new G4PVPlacement(trWorld2(tzp), foilZpLog, "protoFoilZpPhys", worldLog, false, 1);
     new G4PVPlacement(trWorld1(typ), foilYpLog, "protoFoilYpPhys", worldLog, false, 0);
     new G4PVPlacement(trWorld2(typ), foilYpLog, "protoFoilYpPhys", worldLog, false, 1);
-    const G4Transform3D tymL(G4RotationMatrix(), G4ThreeVector(xLeftYm, yFoilMinus, 0.));
-    const G4Transform3D tymR(G4RotationMatrix(), G4ThreeVector(xRightYm, yFoilMinus, 0.));
-    new G4PVPlacement(trWorld1(tymL), foilYmStripLog, "protoFoilYmPhys", worldLog, false, 0);
-    new G4PVPlacement(trWorld2(tymL), foilYmStripLog, "protoFoilYmPhys", worldLog, false, 1);
-    new G4PVPlacement(trWorld1(tymR), foilYmStripLog, "protoFoilYmPhys", worldLog, false, 2);
-    new G4PVPlacement(trWorld2(tymR), foilYmStripLog, "protoFoilYmPhys", worldLog, false, 3);
   }
+
+  // Do NOT attach LogicalBorderSurface(LG, world) with reflective AluminumSurf: it applies to every
+  // LG|vacuum face, including the tessellated tip opening toward SiPM — optical photons then reflect
+  // back into the LG and never reach the SiPM window. Foil is modeled by protoFoil* skin surfaces;
+  // for a fully light-tight wrap without blocking the tip, split the LG solid or use facet-specific
+  // surfaces (future work).
 
   return worldPhys;
 }

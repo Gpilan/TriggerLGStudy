@@ -1,0 +1,42 @@
+project(analysis)
+
+find_package(ROOT REQUIRED)
+
+include_directories(
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+file(GLOB sources
+  ${PROJECT_SOURCE_DIR}/src/*.cc
+)
+file(GLOB headers
+  ${PROJECT_SOURCE_DIR}/include/*.h
+)
+
+include(${ROOT_USE_FILE})
+add_executable(analysis analysis.cc ${sources} ${headers})
+target_compile_features(analysis PUBLIC cxx_std_17)
+target_link_libraries(
+  analysis
+  rootIO
+  ${ROOT_LIBRARIES}
+  ${CMAKE_DL_LIBS}
+)
+
+set(
+  analysis_SCRIPTS
+  plot_trigger_timing.py
+  compare_timing_resolution.py
+  plot_event_photon_time.py
+  plot_overlay_photon_time.py
+  photon_time_root.py
+)
+
+foreach(_script ${analysis_SCRIPTS})
+  configure_file(
+    ${PROJECT_SOURCE_DIR}/${_script}
+    ${PROJECT_BINARY_DIR}/${_script}
+    COPYONLY
+  )
+endforeach()
+
+install(TARGETS analysis DESTINATION bin)
