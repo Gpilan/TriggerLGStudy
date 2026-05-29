@@ -1,4 +1,4 @@
-# e- batch: 60 GeV, 3000 events (Proto)
+# 전자 60 GeV, 3000 이벤트
 /vis/disable
 /run/numberOfThreads 1
 /run/initialize

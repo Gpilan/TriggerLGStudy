@@ -1,0 +1,115 @@
+[INFO] host=cluster351.knu.ac.kr
+[INFO] start=2026-05-16T16:04:31+09:00
+[INFO] macro=run_ele_60gev.mac seed=0 prefix=v2_60GeV_e-_noLG_3000
+[INFO] g++=/cvmfs/sft.cern.ch/lcg/releases/gcc/13.1.0-b3d18/x86_64-el9/bin/g++
+[INFO] libstdcxx=/cvmfs/sft.cern.ch/lcg/releases/gcc/13.1.0-b3d18/x86_64-el9/bin/../lib/gcc/x86_64-pc-linux-gnu/13.1.0/../../../../lib64/libstdc++.so.6
+[INFO] ld_library_path_head=/cvmfs/sft.cern.ch/lcg/releases/gcc/13.1.0-b3d18/x86_64-el9/bin/../lib/gcc/x86_64-pc-linux-gnu/13.1.0/../../../../lib64
+[WARN] ldd(libstdc++) not found in filtered output; ldd head follows:
+	linux-vdso.so.1 (0x00007ffd40be9000)
+	/cvmfs/sft.cern.ch/lcg/releases/gcc/13.1.0-b3d18/x86_64-el9/bin/../lib/gcc/x86_64-pc-linux-gnu/13.1.0/../../../../lib64/libstdc++.so.6 (0x000014ac66200000)
+	libG4Tree.so => /cvmfs/sft.cern.ch/lcg/views/LCG_105/x86_64-el9-gcc13-opt/lib64/libG4Tree.so (0x000014ac66605000)
+	libG4FR.so => /cvmfs/sft.cern.ch/lcg/views/LCG_105/x86_64-el9-gcc13-opt/lib64/libG4FR.so (0x000014ac665f0000)
+	libG4GMocren.so => /cvmfs/sft.cern.ch/lcg/views/LCG_105/x86_64-el9-gcc13-opt/lib64/libG4GMocren.so (0x000014ac665a5000)
+	libG4visHepRep.so => /cvmfs/sft.cern.ch/lcg/views/LCG_105/x86_64-el9-gcc13-opt/lib64/libG4visHepRep.so (0x000014ac66588000)
+	libG4RayTracer.so => /cvmfs/sft.cern.ch/lcg/views/LCG_105/x86_64-el9-gcc13-opt/lib64/libG4RayTracer.so (0x000014ac66558000)
+	libG4VRML.so => /cvmfs/sft.cern.ch/lcg/views/LCG_105/x86_64-el9-gcc13-opt/lib64/libG4VRML.so (0x000014ac66546000)
+	libG4ToolsSG.so => /cvmfs/sft.cern.ch/lcg/views/LCG_105/x86_64-el9-gcc13-opt/lib64/libG4ToolsSG.so (0x000014ac65e00000)
+	libG4OpenGL.so => /cvmfs/sft.cern.ch/lcg/views/LCG_105/x86_64-el9-gcc13-opt/lib64/libG4OpenGL.so (0x000014ac66471000)
+	libG4visQt3D.so => /cvmfs/sft.cern.ch/lcg/views/LCG_105/x86_64-el9-gcc13-opt/lib64/libG4visQt3D.so (0x000014ac661e2000)
+	libG4vis_management.so => /cvmfs/sft.cern.ch/lcg/views/LCG_105/x86_64-el9-gcc13-opt/lib64/libG4vis_management.so (0x000014ac65c7c000)
+	libG4modeling.so => /cvmfs/sft.cern.ch/lcg/views/LCG_105/x86_64-el9-gcc13-opt/lib64/libG4modeling.so (0x000014ac660d6000)
+	libG4interfaces.so => /cvmfs/sft.cern.ch/lcg/views/LCG_105/x86_64-el9-gcc13-opt/lib64/libG4interfaces.so (0x000014ac65bed000)
+	libG4mctruth.so => /cvmfs/sft.cern.ch/lcg/views/LCG_105/x86_64-el9-gcc13-opt/lib64/libG4mctruth.so (0x000014ac660a7000)
+	libG4geomtext.so => /cvmfs/sft.cern.ch/lcg/views/LCG_105/x86_64-el9-gcc13-opt/lib64/libG4geomtext.so (0x000014ac65b46000)
+	libG4gdml.so => /cvmfs/sft.cern.ch/lcg/views/LCG_105/x86_64-el9-gcc13-opt/lib64/libG4gdml.so (0x000014ac65a85000)
+	libG4error_propagation.so => /cvmfs/sft.cern.ch/lcg/views/LCG_105/x86_64-el9-gcc13-opt/lib64/libG4error_propagation.so (0x000014ac65a4a000)
+	libG4readout.so => /cvmfs/sft.cern.ch/lcg/views/LCG_105/x86_64-el9-gcc13-opt/lib64/libG4readout.so (0x000014ac66461000)
+	libG4physicslists.so => /cvmfs/sft.cern.ch/lcg/views/LCG_105/x86_64-el9-gcc13-opt/lib64/libG4physicslists.so (0x000014ac658d2000)
+
+**************************************************************
+ Geant4 version Name: geant4-11-02 [MT]   (8-December-2023)
+  << in Multi-threaded mode >> 
+                       Copyright : Geant4 Collaboration
+                      References : NIM A 506 (2003), 250-303
+                                 : IEEE-TNS 53 (2006), 270-278
+                                 : NIM A 835 (2016), 186-225
+                             WWW : http://geant4.org/
+**************************************************************
+
+<<< Geant4 Physics List simulation engine: FTFP_BERT
+
+Visualization Manager instantiating with verbosity "warnings (3)"...
+Visualization Manager initialising...
+Registering graphics systems...
+
+You have successfully registered the following graphics systems.
+Registered graphics systems are:
+  ASCIITree (ATree)
+  DAWNFILE (DAWNFILE)
+  G4HepRepFile (HepRepFile)
+  RayTracer (RayTracer)
+  VRML2FILE (VRML2FILE)
+  gMocrenFile (gMocrenFile)
+  TOOLSSG_OFFSCREEN (TSG_OFFSCREEN)
+  TOOLSSG_OFFSCREEN (TSG_OFFSCREEN, TSG_FILE)
+  OpenGLImmediateQt (OGLIQt, OGLI)
+  OpenGLStoredQt (OGLSQt, OGL, OGLS)
+  OpenGLImmediateXm (OGLIXm, OGLIQt_FALLBACK)
+  OpenGLStoredXm (OGLSXm, OGLSQt_FALLBACK)
+  OpenGLImmediateX (OGLIX, OGLIQt_FALLBACK, OGLIXm_FALLBACK)
+  OpenGLStoredX (OGLSX, OGLSQt_FALLBACK, OGLSXm_FALLBACK)
+  RayTracerX (RayTracerX)
+  Qt3D (Qt3D)
+  TOOLSSG_X11_GLES (TSG_X11_GLES, TSGX11, TSG_XT_GLES_FALLBACK)
+  TOOLSSG_XT_GLES (TSG_XT_GLES, TSGXt, TSG_QT_GLES_FALLBACK)
+  TOOLSSG_XT_ZB (TSG_XT_ZB, TSGXtZB)
+  TOOLSSG_QT_GLES (TSG_QT_GLES, TSGQt, TSG)
+  TOOLSSG_QT_ZB (TSG_QT_ZB, TSGQtZB)
+Default graphics system is: TSG_OFFSCREEN (based on batch session).
+Default window size hint is: 600x600-0+0 (based on G4VisManager initialisation).
+Note: Parameters specified on the command line will override these defaults.
+      Use "vis/open" without parameters to get these defaults.
+
+Registering model factories...
+
+You have successfully registered the following model factories.
+Registered model factories:
+  generic
+  drawByAttribute
+  drawByCharge
+  drawByOriginVolume
+  drawByParticleID
+  drawByEncounteredVolume
+
+Registered models:
+  None
+
+Registered filter factories:
+  attributeFilter
+  chargeFilter
+  originVolumeFilter
+  particleFilter
+  encounteredVolumeFilter
+
+Registered filters:
+  None
+
+You have successfully registered the following user vis actions.
+Run Duration User Vis Actions: none
+End of Event User Vis Actions: none
+End of Run User Vis Actions: none
+
+Some /vis commands (optionally) take a string to specify colour.
+"/vis/list" to see available colours.
+
+-------- WWWW ------- G4Exception-START -------- WWWW -------
+*** G4Exception : UIMAN0123
+      issued by : G4UImanager::ApplyCommand
+Command aborted (400)
+Error code : 400
+*** This is just a warning message. ***
+-------- WWWW -------- G4Exception-END --------- WWWW -------
+
+Graphics systems deleted.
+Visualization Manager deleting...
+[INFO] done=2026-05-16T16:07:14+09:00
