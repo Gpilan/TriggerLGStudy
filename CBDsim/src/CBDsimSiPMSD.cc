@@ -9,14 +9,113 @@
 #include "G4VPhysicalVolume.hh"
 #include "G4VTouchable.hh"
 #include "G4StepPoint.hh"
+#include "G4Exception.hh"
+#include "Randomize.hh"
 
 #include <atomic>
+#include <algorithm>
+#include <fstream>
+#include <sstream>
+#include <string>
+#include <vector>
 
 using namespace std;
 
 namespace {
 constexpr int kSiPMSD_DbgMaxPrint = 25;
+constexpr const char* kQeCsvDefaultPath =
+    "analysis/reference/pmt_r2076/R2076_quantum_efficiency_percent.csv";
 }
+
+namespace {
+struct QeTable {
+  std::vector<G4double> wavelengthNm;
+  std::vector<G4double> qeFraction;
+};
+
+G4double Clamp01(G4double x) {
+  if (x < 0.) return 0.;
+  if (x > 1.) return 1.;
+  return x;
+}
+
+QeTable LoadQeCsvOrThrow(const std::string& path) {
+  QeTable table;
+  std::ifstream fin(path);
+  if (!fin.is_open()) {
+    G4ExceptionDescription msg;
+    msg << "Failed to open QE CSV: " << path;
+    G4Exception("CBDsimSiPMSD::LoadQeCsvOrThrow", "QE_CSV_OPEN", FatalException, msg);
+  }
+
+  std::string line;
+  // Skip header: wavelength_nm,quantum_efficiency_percent
+  std::getline(fin, line);
+  while (std::getline(fin, line)) {
+    if (line.empty()) continue;
+
+    std::stringstream ss(line);
+    std::string wStr;
+    std::string qStr;
+    if (!std::getline(ss, wStr, ',')) {
+      G4ExceptionDescription msg;
+      msg << "Malformed QE CSV row (wavelength missing): " << line;
+      G4Exception("CBDsimSiPMSD::LoadQeCsvOrThrow", "QE_CSV_PARSE", FatalException, msg);
+    }
+    if (!std::getline(ss, qStr, ',')) {
+      G4ExceptionDescription msg;
+      msg << "Malformed QE CSV row (QE missing): " << line;
+      G4Exception("CBDsimSiPMSD::LoadQeCsvOrThrow", "QE_CSV_PARSE", FatalException, msg);
+    }
+
+    const G4double w = std::stod(wStr);
+    const G4double qPercent = std::stod(qStr);
+    table.wavelengthNm.push_back(w);
+    table.qeFraction.push_back(Clamp01(qPercent * 0.01));
+  }
+
+  if (table.wavelengthNm.size() < 2) {
+    G4ExceptionDescription msg;
+    msg << "QE CSV has too few points: " << table.wavelengthNm.size();
+    G4Exception("CBDsimSiPMSD::LoadQeCsvOrThrow", "QE_CSV_SIZE", FatalException, msg);
+  }
+
+  for (size_t i = 1; i < table.wavelengthNm.size(); ++i) {
+    if (!(table.wavelengthNm[i - 1] < table.wavelengthNm[i])) {
+      G4ExceptionDescription msg;
+      msg << "QE CSV wavelength must be strictly increasing.";
+      G4Exception("CBDsimSiPMSD::LoadQeCsvOrThrow", "QE_CSV_ORDER", FatalException, msg);
+    }
+  }
+
+  G4cout << "[SiPM SD] Loaded QE CSV: " << path
+         << " (points=" << table.wavelengthNm.size() << ")" << G4endl;
+  return table;
+}
+
+const QeTable& GetQeTable() {
+  static const QeTable table = LoadQeCsvOrThrow(kQeCsvDefaultPath);
+  return table;
+}
+
+G4double InterpolateQeFraction(const QeTable& table, G4double wavelengthNm) {
+  const auto& xs = table.wavelengthNm;
+  const auto& ys = table.qeFraction;
+  if (wavelengthNm <= xs.front()) return ys.front();
+  if (wavelengthNm >= xs.back()) return ys.back();
+
+  auto it = std::lower_bound(xs.begin(), xs.end(), wavelengthNm);
+  const size_t i1 = static_cast<size_t>(it - xs.begin());
+  const size_t i0 = i1 - 1;
+  const G4double x0 = xs[i0];
+  const G4double x1 = xs[i1];
+  const G4double y0 = ys[i0];
+  const G4double y1 = ys[i1];
+  if (x1 <= x0) return y0;
+  const G4double t = (wavelengthNm - x0) / (x1 - x0);
+  return Clamp01(y0 + t * (y1 - y0));
+}
+}  // namespace
 
 namespace {
 
@@ -85,6 +184,17 @@ void CBDsimSiPMSD::Initialize(G4HCofThisEvent* hce) {
 
 G4bool CBDsimSiPMSD::ProcessHits(G4Step* step, G4TouchableHistory*) {
   if (step->GetTrack()->GetDefinition() != G4OpticalPhoton::OpticalPhotonDefinition()) return false;
+  const G4double energy = step->GetTrack()->GetTotalEnergy();
+  const G4double wavelengthNm = (h_Planck * c_light / energy) / nm;
+  const QeTable& qeTable = GetQeTable();
+  const G4double qe = InterpolateQeFraction(qeTable, wavelengthNm);
+  const bool detected = (G4UniformRand() < qe);
+  if (!detected) {
+    // Detection model: photon is absorbed in Si wafer; only accepted fraction is counted.
+    step->GetTrack()->SetTrackStatus(fStopAndKill);
+    return false;
+  }
+
   G4int SiPMnum = 0;
   G4int towernum = 0;
   SiPMAndTowerFromTouchable(step, SiPMnum, towernum);
@@ -106,7 +216,6 @@ G4bool CBDsimSiPMSD::ProcessHits(G4Step* step, G4TouchableHistory*) {
   }
 
   G4double hitTime  = step->GetPostStepPoint()->GetGlobalTime();
-  G4double energy = step->GetTrack()->GetTotalEnergy();
   G4int towerX = fTowerXY.first;
   G4int towerY = fTowerXY.second;
   G4int sipmX = SiPMnum/towerY;
