@@ -1,0 +1,1 @@
+[LG] entries=3000 valid_events_for_kmax=1577 mpv_t1=468.775 mpv_t2=469.008 k_max=468\n[noLG] entries=3000 valid_events_for_kmax=1580 mpv_t1=776.110 mpv_t2=773.160 k_max=773\n

@@ -1,0 +1,24 @@
+model	category	parameter	qualifier	value	unit	raw_spec_text	source_note
+R2076	general	type		Head-on type		Type = Head-on type	User-provided PMT specification screenshot
+R2076	mechanical	tube_diameter		19	mm	Tube Size = Dia.19 mm	User-provided PMT specification screenshot
+R2076	photocathode	photocathode_area_shape		Round		Photocathode Area Shape = Round	User-provided PMT specification screenshot
+R2076	photocathode	photocathode_area_diameter		15	mm	Photocathode Area Size = Dia.15 mm	User-provided PMT specification screenshot
+R2076	photocathode	photocathode_material	window_material	Bialkali		Photocathode Material = Bialkali	User-provided PMT specification screenshot
+R2076	window			Quartz		Window Material = Quartz	User-provided PMT specification screenshot
+R2076	dynode	dynode_structure		Linear-focused		Dynode Structure = Linear-focused	User-provided PMT specification screenshot
+R2076	dynode	dynode_stages		8	stage	Dynode Stages = 8	User-provided PMT specification screenshot
+R2076	maximum_rating	anode_to_cathode_voltage	max	1800	V	[Max. Rating] Anode to Cathode Voltage = 1800 V	User-provided PMT specification screenshot
+R2076	maximum_rating	average_anode_current	max	0.1	mA	[Max. Rating] Average Anode Current = 0.1 mA	User-provided PMT specification screenshot
+R2076	operating_condition	anode_to_cathode_supply_voltage		1700	V	Anode to Cathode Supply Voltage = 1700 V	User-provided PMT specification screenshot
+R2076	cathode	luminous_sensitivity	min	70	uA/lm	[Cathode] Luminous Sensitivity Min. = 70 ��A/lm	User-provided PMT specification screenshot
+R2076	cathode	luminous_sensitivity	typ	115	uA/lm	[Cathode] Luminous Sensitivity Typ. = 115 ��A/lm	User-provided PMT specification screenshot
+R2076	cathode	blue_sensitivity_index_cs_5_58	typ	11		[Cathode] Blue Sensitivity Index (CS 5-58) Typ. = 11	User-provided PMT specification screenshot
+R2076	cathode	radiant_sensitivity	typ	88	mA/W	[Cathode] Radiant Sensitivity Typ. = 88 mA/W	User-provided PMT specification screenshot
+R2076	anode	luminous_sensitivity	min	100	A/lm	[Anode] Luminous Sensitivity Min. = 100 A/lm	User-provided PMT specification screenshot
+R2076	anode	luminous_sensitivity	typ	200	A/lm	[Anode] Luminous Sensitivity Typ. = 200 A/lm	User-provided PMT specification screenshot
+R2076	anode	radiant_sensitivity	typ	1.50E+05	A/W	[Anode] Radiant Sensitivity Typ. = 1.5 �� 10^5 A/W	User-provided PMT specification screenshot
+R2076	anode	gain	typ	1.70E+06		[Anode] Gain Typ. = 1.7 �� 10^6	User-provided PMT specification screenshot
+R2076	anode	dark_current_after_30min	typ	10	nA	[Anode] Dark Current (after 30min.) Typ. = 10 nA	User-provided PMT specification screenshot
+R2076	anode	dark_current_after_30min	max	300	nA	[Anode] Dark Current (after 30min.) Max. = 300 nA	User-provided PMT specification screenshot
+R2076	time_response	rise_time	typ	1.3	ns	[Time Response] Rise Time Typ. = 1.3 ns	User-provided PMT specification screenshot
+R2076	time_response	transit_time	typ	14	ns	[Time Response] Transit Time Typ. = 14 ns	User-provided PMT specification screenshot

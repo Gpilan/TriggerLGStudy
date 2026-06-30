@@ -1,0 +1,131 @@
+Waveform Reconstruction 기반 CFD 분석 작업 정리 (2026-06-24)
+
+[문서 목적]
+- 오늘 수행한 waveform reconstruction 기반 CFD 마이그레이션 작업을 제3자가 빠르게 이해할 수 있게 정리한다.
+- 교수님 보고 시 핵심 메시지:
+  1) 물리적 한계는 분명히 존재한다.
+  2) 그럼에도 LG vs noLG 비교에서, 기존 방식보다 LG 효과를 더 "정확하게 분리/관찰"할 가능성이 높다.
+
+
+[1. 오늘 작업의 핵심 변경사항]
+1) 이벤트 대표 플롯(3x2)에서 waveform reconstruction 적용
+- 파일: analysis/plot_event_optical_mpv_matrix_root.py
+- row2: 200 ps photon-arrival 분포
+- row3: reconstructed waveform + local-linear CFD fit window/threshold/crossing + fit quality
+- PMT spec CSV에서 rise_time(typ), transit_time(typ) 자동 반영
+- waveform는 200 ps 재빈에 종속되지 않도록 샘플링 기반으로 재구성
+
+2) per-trigger CFD 스크립트를 waveform 기반으로 교체
+- 파일: analysis/plot_cfd_per_trigger_locallinear_peak.py
+- 기존: photon-arrival histogram(재빈)에서 local-linear crossing
+- 변경: photon arrival -> impulse -> gamma kernel convolution -> waveform crossing
+- T1, T2 TOA와 Delta(T1-T2) 분포를 waveform CFD 기준으로 생성
+
+3) 결과 파일 네이밍 개선
+- 기존 "from200ps_to5ps" 표기 대신
+- "waveform_recon_to_5ps" 계열로 저장하여 방식 혼동 방지
+
+4) CFD fraction scan 백그라운드 생성
+- CFD = 0.10 ~ 0.90 (step 0.10)
+- 최종 산출은 2x3 비교 플롯만 유지
+
+
+[2. 알고리즘 관점: 기존 대비 무엇이 달라졌는가]
+A) 기존(요약)
+- 도착시간 히스토그램을 특정 bin(예: 200 ps)으로 재구성
+- 그 히스토그램의 상승부에서 CFD crossing 추정
+- binning 선택에 따라 crossing 편향/계단 효과가 생길 수 있음
+
+B) 현재(요약)
+- 도착시간 정보를 waveform으로 재구성:
+  impulse 생성 -> PMT 응답(gamma kernel) 컨볼루션 -> 연속형에 가까운 파형 생성
+- 이 파형의 상승부에서 local-linear fitting 후 CFD crossing 계산
+- 최종 통계 히스토그램만 5 ps bin으로 표현
+
+핵심 차이:
+- "입력 신호 모델링"을 먼저 하고 CFD를 적용함
+- crossing 계산이 histogram bin 경계에 덜 묶임
+
+
+[3. 물리적 한계 (교수님 보고 시 명확히 언급해야 하는 부분)]
+1) 단순화된 PMT 응답 모델
+- 단일 gamma kernel 기반이며 실제 PMT의 모든 비이상성은 반영하지 못함.
+
+2) 전자회로/노이즈 미포함
+- dark current, electronic noise, baseline drift, afterpulse, prepulse, 채널별 gain 변동 등은 현재 미반영.
+
+3) FWHM 파라미터 불확실성
+- rise/transit은 스펙 typ를 사용하지만, FWHM은 현재 기본값(3.0 ns) fallback.
+- 이 값은 추후 데이터시트/실측 기반 재보정 필요.
+
+4) 절대 시간축 vs 상대 시간축
+- transit time 적용으로 T1/T2 절대 TOA 위치는 이동.
+- 그러나 Delta(T1-T2)는 공통항이 상쇄되는 성질이 있어 영향이 일부 감소함.
+- 그래도 채널 비대칭 요소가 있으면 완전 상쇄는 보장되지 않음.
+
+5) 시뮬레이션 상위단의 가정 의존
+- QE 적용/광자 생성 단계의 가정이 최종 waveform/CFD 결과에 그대로 전파됨.
+
+
+[4. 왜 LG vs noLG 효과를 "이전보다 정확하게" 볼 수 있는가]
+1) binning bias 감소
+- "200 ps 재빈 후 바로 CFD"보다,
+- waveform 재구성 후 crossing 계산이 bin 경계 민감도를 낮춤.
+
+2) 물리적으로 더 자연스러운 비교 기준
+- 두 조건(LG/noLG)에 동일한 PMT 응답 모델을 적용하므로
+- 광 수집/시간 분포 차이를 동일한 판독 모델로 비교 가능.
+
+3) 초반 상승부 샘플 부족 문제 완화
+- noLG처럼 분포가 넓거나 성긴 경우,
+- 직접 히스토그램 crossing보다 waveform 기반이 수치적으로 안정적인 경우가 많음.
+
+4) 해석의 일관성
+- 동일 CFD fraction 스캔(0.1~0.9)을 한 모델에서 일관되게 비교 가능.
+
+주의:
+- "절대적으로 맞다"가 아니라 "기존 대비 체계적 편향을 줄일 가능성이 높다"는 표현이 적절함.
+
+
+[5. 오늘 생성된 대표 산출물]
+디렉토리:
+- analysis/t_res/figures/version3_waveforn_recon
+
+대표 파일:
+- cfd0p3_waveform_recon_per_trigger_v3_60GeV_e-_LG_noLG_3000_0_2x3_waveform_recon_to_5ps.png
+- cfd0p10 ~ cfd0p90 waveform_recon_to_5ps 계열 2x3 비교 플롯
+- event_optical_mpv_matrix_v3_... (waveform row 포함)
+
+
+[6. 재현 실행(요약)]
+환경:
+- source envset.sh
+- PYTHONPATH에 analysis 포함 필요
+
+핵심 스크립트:
+- analysis/plot_event_optical_mpv_matrix_root.py
+- analysis/plot_cfd_per_trigger_locallinear_peak.py
+
+권장:
+- Delta(T1-T2)는 자동 range 기반으로 확인
+- T1/T2 절대 TOA는 transit 적용 여부를 함께 기록
+
+
+[7. 다음 단계 제안]
+1) FWHM 근거 고정
+- 데이터시트/벤치마크/실측 파형으로 response_fwhm_ns 보정
+
+2) 노이즈 모델 추가
+- dark current + electronics noise + baseline fluctuation을 간단 모델로 주입
+
+3) 시스템 에러 바운드 제시
+- sample_step, rise, fwhm, fraction 변화에 대한 민감도 스캔
+
+4) LG/noLG 결론 보고 형식
+- CFD fraction별 sigma(DeltaT) 비교 표
+- "기존 방식 vs waveform 방식" 동시 비교 패널
+
+
+[한 줄 결론]
+- 이번 waveform reconstruction 적용은 물리적으로 완전한 detector readout 모델은 아니지만,
+- 기존 "재빈 히스토그램 직접 CFD" 대비 LG/noLG 시간분해능 차이를 더 공정하고 안정적으로 비교할 기반을 제공한다.
