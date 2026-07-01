@@ -18,12 +18,12 @@
 #include "CBDsimSiPMSD.hh"
 
 namespace {
-// Beam +z through thin z (5 mm). Scint 40×60 mm (half 20×30 mm in x,y), thin z half = 2.5 mm (5 mm full).
-constexpr G4double kHxWide = 20.0 * mm;
+// Beam +z through thin z (5 mm). Scint 10×60 mm (half 5×30 mm in x,y), thin z half = 2.5 mm (5 mm full).
+constexpr G4double kHxWide = 5.0 * mm;
 constexpr G4double kHyLong = 30.0 * mm;
 constexpr G4double kHzThin = 2.5 * mm;
-/** Rectangular SiPM + window on -y face: 15 mm (x) × 5 mm (z), centered on tile. */
-constexpr G4double kSipmHalfX = 7.5 * mm;
+/** Rectangular SiPM + window on -y face: 9.9 mm (x) × 5 mm (z), centered on tile. */
+constexpr G4double kSipmHalfX = 4.95 * mm;
 constexpr G4double kSipmHalfZ = kHzThin;
 /** Vacuum gap between scint -y face and SiPM window (0 = flush). */
 constexpr G4double kSiPMAirGap = 0.0 * mm;

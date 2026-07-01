@@ -1,0 +1,16 @@
+universe = vanilla
+
+executable = /u/user/rmsvlf000/Trigger/condor/run_cbdsim_condor.sh
+arguments  = /u/user/rmsvlf000/Trigger/CBDsim/run_ele_60gev.mac 0 /u/user/rmsvlf000/Trigger/analysis/t_res/data/v4_60GeV_e-_noLG_1x1_3000
+
+log    = /u/user/rmsvlf000/Trigger/condor_logs/cbdsim_nolg_1x1_v4_$(ClusterId).log
+output = /u/user/rmsvlf000/Trigger/condor_logs/cbdsim_nolg_1x1_v4_$(ClusterId)_$(ProcId).out
+error  = /u/user/rmsvlf000/Trigger/condor_logs/cbdsim_nolg_1x1_v4_$(ClusterId)_$(ProcId).err
+
+request_cpus   = 1
+request_memory = 4 GB
+request_disk   = 4 GB
+
+should_transfer_files = NO
+
+queue
