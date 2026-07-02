@@ -17,8 +17,8 @@ import os
 from dataclasses import dataclass
 from typing import Optional
 
-from compare_timing_resolution import _rebin_merged_to_width
-from plot_trigger_timing import (
+from code_archive.compare_timing_resolution import _rebin_merged_to_width
+from code_archive.plot_trigger_timing import (
     _figures_dir,
     _find_repo_root,
     _load_rootio,

@@ -12,7 +12,7 @@ import math
 import os
 from typing import Any, Optional
 
-from plot_trigger_timing import (
+from code_archive.plot_trigger_timing import (
     _figures_dir,
     _find_repo_root,
     _load_rootio,
