@@ -14,8 +14,16 @@ import argparse
 import csv
 import math
 import os
+import sys
 from dataclasses import dataclass
 from typing import Optional
+
+THIS_DIR = os.path.abspath(os.path.dirname(__file__))
+CODE_ARCHIVE_DIR = os.path.join(THIS_DIR, "code_archive")
+if THIS_DIR not in sys.path:
+    sys.path.insert(0, THIS_DIR)
+if CODE_ARCHIVE_DIR not in sys.path:
+    sys.path.insert(0, CODE_ARCHIVE_DIR)
 
 from code_archive.compare_timing_resolution import _rebin_merged_to_width
 from code_archive.plot_trigger_timing import (

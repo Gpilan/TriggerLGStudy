@@ -26,7 +26,7 @@
 
 namespace {
 // Beam +z through thin z (5 mm). LG couples to 10x5 mm face (x-z plane, -y face), extends to -y.
-constexpr G4double kHxWide = 5.0 * mm;
+constexpr G4double kHxWide = 20.0 * mm;
 constexpr G4double kHyLong = 30.0 * mm;
 constexpr G4double kHzThin = 2.5 * mm;
 constexpr G4double kLguide = 30.0 * mm;

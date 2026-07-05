@@ -1,0 +1,6 @@
+size_cm,root_path,mpv_t1,mpv_t2,mpv_mean,sigma_ns,sigma_ps,n_dt
+1.00,/u/user/rmsvlf000/Trigger/analysis/t_res/data/v4_60GeV_e-_LG_1x1_3000_0.root,885.192835,887.590759,886.391797,0.058616,58.616,3000
+1.50,/u/user/rmsvlf000/Trigger/analysis/t_res/data/v4_60GeV_e-_LG_1p5x1p5_3000_0.root,853.930236,854.099931,854.015083,0.063783,63.783,3000
+2.00,/u/user/rmsvlf000/Trigger/analysis/t_res/data/v4_60GeV_e-_LG_2x2_3000_0.root,756.899567,759.876959,758.388263,0.064438,64.438,3000
+2.50,/u/user/rmsvlf000/Trigger/analysis/t_res/data/v4_60GeV_e-_LG_2p5x2p5_3000_0.root,641.170531,639.819469,640.495000,0.071153,71.153,3000
+4.00,/u/user/rmsvlf000/Trigger/analysis/t_res/data/v3_60GeV_e-_LG_3000_0.root,468.881642,469.405808,469.143725,0.094449,94.449,3000
