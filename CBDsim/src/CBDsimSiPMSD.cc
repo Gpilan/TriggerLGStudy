@@ -1,5 +1,6 @@
 #include "CBDsimSiPMSD.hh"
 #include "CBDsimSiPMHit.hh"
+#include "CBDsimOpticalDiagnostics.hh"
 
 #include "G4EventManager.hh"
 #include "G4HCofThisEvent.hh"
@@ -190,6 +191,7 @@ G4bool CBDsimSiPMSD::ProcessHits(G4Step* step, G4TouchableHistory*) {
   const G4double qe = InterpolateQeFraction(qeTable, wavelengthNm);
   const bool detected = (G4UniformRand() < qe);
   if (!detected) {
+  CBDsimOpticalDiagnostics::RecordSipmQeReject(step);
     // Detection model: photon is absorbed in Si wafer; only accepted fraction is counted.
     step->GetTrack()->SetTrackStatus(fStopAndKill);
     return false;
@@ -244,6 +246,7 @@ G4bool CBDsimSiPMSD::ProcessHits(G4Step* step, G4TouchableHistory*) {
   }
 
   hit->photonCount();
+  CBDsimOpticalDiagnostics::RecordSipmDetect(step);
 
   CBDsimInterface::hitRange wavRange = findWavRange(energy);
   hit->CountWavlenSpectrum(wavRange);

@@ -1,4 +1,5 @@
 #include "CBDsimSteppingAction.hh"
+#include "CBDsimOpticalDiagnostics.hh"
 
 #include "G4Track.hh"
 #include "G4StepPoint.hh"
@@ -36,7 +37,10 @@ CBDsimSteppingAction::CBDsimSteppingAction(CBDsimEventAction* evtAct)
 CBDsimSteppingAction::~CBDsimSteppingAction() {}
 void CBDsimSteppingAction::UserSteppingAction(const G4Step* step)
 {
-  if ( step->GetTrack()->GetDefinition() == G4OpticalPhoton::OpticalPhotonDefinition() ) return;
+  if ( step->GetTrack()->GetDefinition() == G4OpticalPhoton::OpticalPhotonDefinition() ) {
+    CBDsimOpticalDiagnostics::UserSteppingAction(step);
+    return;
+  }
   // G4cout<<"where are you?"<<G4endl;
   G4Track* track = step->GetTrack();
   (void)track;

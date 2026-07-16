@@ -1,8 +1,11 @@
 #include "CBDsimRunAction.hh"
+#include "CBDsimOpticalDiagnostics.hh"
 
 #include "G4AutoLock.hh"
+#include "G4Run.hh"
 #include "G4Threading.hh"
 
+#include <cstdlib>
 #include <iostream>
 
 namespace { G4Mutex CBDsimRunActionMutex = G4MUTEX_INITIALIZER; }
@@ -36,6 +39,20 @@ CBDsimRunAction::~CBDsimRunAction() {
   }
 }
 
-void CBDsimRunAction::BeginOfRunAction(const G4Run*) {}
+void CBDsimRunAction::BeginOfRunAction(const G4Run*) {
+  CBDsimOpticalDiagnostics::ResetForRun();
+}
 
-void CBDsimRunAction::EndOfRunAction(const G4Run*) {}
+void CBDsimRunAction::EndOfRunAction(const G4Run* run) {
+  CBDsimOpticalDiagnostics::MergeWorkerIntoMaster();
+  if (IsMaster() && run) {
+    const G4int nEvents = run->GetNumberOfEvent();
+    CBDsimOpticalDiagnostics::PrintSummary(nEvents);
+    if (const char* out = std::getenv("CBDsim_OPTICAL_DIAG_OUT")) {
+      CBDsimOpticalDiagnostics::WriteSummaryFile(out, nEvents);
+    }
+    if (const char* histOut = std::getenv("CBDsim_OPTICAL_DIAG_HIST_OUT")) {
+      CBDsimOpticalDiagnostics::WritePathHistogramFile(histOut);
+    }
+  }
+}

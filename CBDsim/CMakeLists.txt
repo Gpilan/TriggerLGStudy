@@ -73,6 +73,7 @@ set(CBDsim_SCRIPTS
   run_muon_10mev_minimal.mac
   run_gamma.mac
   run_verify.mac
+  run_diag_100ev.mac
   verify_root.C
   verify_root_run.sh
 )

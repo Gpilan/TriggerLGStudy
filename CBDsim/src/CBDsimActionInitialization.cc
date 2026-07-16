@@ -3,6 +3,7 @@
 #include "CBDsimPrimaryGeneratorAction.hh"
 #include "CBDsimEventAction.hh"
 #include "CBDsimSteppingAction.hh"
+#include "CBDsimTrackingAction.hh"
 
 CBDsimActionInitialization::CBDsimActionInitialization(G4int seed, G4String filename)
 : G4VUserActionInitialization()
@@ -25,4 +26,5 @@ void CBDsimActionInitialization::Build() const {
   SetUserAction(evtAct);
 
   SetUserAction(new CBDsimSteppingAction(evtAct));
+  SetUserAction(new CBDsimTrackingAction());
 }
