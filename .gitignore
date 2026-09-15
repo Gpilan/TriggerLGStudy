@@ -18,3 +18,10 @@ __pycache__/
 
 .vscode/
 .idea/
+
+# Personal context and generated caches
+/.local-context/
+/AGENTS.md
+**/.mplconfig/
+# New batch output; already tracked historical logs remain unchanged.
+/condor_logs/
