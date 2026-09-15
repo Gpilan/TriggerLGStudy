@@ -11,9 +11,12 @@ class G4LogicalVolume;
 /**
  * Prototype geometry (trigger/LG study): plastic scint slab + tessellated light guide.
  * Beam along +z crosses the thin (5 mm) z extent; world is vacuum (G4_Galactic); Al foil
- * on scint; LG on the 10x5 mm face (normal -y), extending to -y; SiPM at LG tip (axis y).
+ * on scint; LG on the 40x5 mm face (normal -y), extending to -y; SiPM at LG tip (axis y).
  * Optional no-LG (CBDsim_PROTO_NO_LG=1): no LG; 15x5 mm rectangular SiPM+gel on scint -y;
- * foil strips fill the remaining -y face beside the SiPM (v5 hollow shell + corner pads kept).
+ * foil strips fill the remaining -y face beside the SiPM. The LG inlet mesh includes exact
+ * rectangle corners; no overlapping corner pads are used.
+ * LG mode: separate 0.02 mm inlet and 0.10 mm outlet grease layers, with flush
+ * contacts and no sibling volume overlap. The tip foil sleeve lies outside the sensor radius.
  * readout face (same SD naming as legacy back plane). Units: mm.
  *
  * Only the world logical volume is G4_Galactic; two trigger assemblies (shared LVs, copy 0/1) are placed

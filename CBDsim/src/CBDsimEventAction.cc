@@ -1,6 +1,7 @@
 #include "CBDsimRunAction.hh"
 #include "CBDsimEventAction.hh"
 #include "CBDsimPrimaryGeneratorAction.hh"
+#include "CBDsimOpticalDiagnostics.hh"
 #include "G4Event.hh"
 #include "G4HCofThisEvent.hh"
 #include "G4SDManager.hh"
@@ -83,6 +84,7 @@ CBDsimEventAction::~CBDsimEventAction() {
 }
 
 void CBDsimEventAction::BeginOfEventAction(const G4Event* evt) {
+  CBDsimOpticalDiagnostics::BeginEvent(evt->GetEventID());
   clear();
   int evtNo = evt->GetEventID();
 
@@ -107,6 +109,7 @@ void CBDsimEventAction::clear() {
 }
 
 void CBDsimEventAction::EndOfEventAction(const G4Event* evt) {
+  CBDsimOpticalDiagnostics::EndEvent(evt->IsAborted());
     G4HCofThisEvent* hce = evt->GetHCofThisEvent();
   if (!hce) {
     std::cout << "No hit collection!" << std::endl;

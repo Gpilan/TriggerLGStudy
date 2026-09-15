@@ -25,6 +25,8 @@ if THIS_DIR not in sys.path:
 if CODE_ARCHIVE_DIR not in sys.path:
     sys.path.insert(0, CODE_ARCHIVE_DIR)
 
+from spe_response import resolve_response, sample_kernel, convolve_impulses, _gamma_tau_from_rise
+
 from code_archive.compare_timing_resolution import _rebin_merged_to_width
 from code_archive.plot_trigger_timing import (
     _figures_dir,
@@ -235,11 +237,9 @@ def _fit_local_linear_threshold_on_hist(ROOT, h, peak_frac: float, half_window: 
     r2 = _weighted_r2(xs, ys, ws, a, b)
     n = len(xs)
     yfit = [a * xx + b for xx in xs]
-    # Weighted proxy chi2 for local linear fit quality.
+    # Descriptive residual only: no calibrated noise/covariance model.
     chi2 = float(sum(wi * (yy - ff) ** 2 for wi, yy, ff in zip(ws, ys, yfit)))
     ndf = int(max(n - 2, 0))
-    # Approximate p-value for weighted residual metric.
-    pval = float(ROOT.TMath.Prob(chi2, ndf)) if ndf > 0 else 1.0
 
     fline = ROOT.TF1(fit_name, "[0]*x+[1]", xmin, xmax)
     fline.SetParameter(0, a)
@@ -251,9 +251,9 @@ def _fit_local_linear_threshold_on_hist(ROOT, h, peak_frac: float, half_window: 
         "threshold": float(thr),
         "peak": float(peak),
         "r2": r2,
-        "chi2": chi2,
-        "ndf": ndf,
-        "pvalue": pval,
+        "weighted_residual": chi2,
+        "residual_dof": ndf,
+        "quality_model": "descriptive fit; no calibrated noise covariance",
         "xmin": float(xmin),
         "xmax": float(xmax),
     }
@@ -275,34 +275,6 @@ def _crossing(time: list[float], values: list[float], peak_index: int, level: fl
             x1 = float(time[i])
             return float(x0 + (level - y0) * (x1 - x0) / dy)
     return None
-
-
-def _gamma_response(shape: float, x: float) -> float:
-    if x <= 0.0:
-        return 0.0
-    return float((x / shape) ** shape * math.exp(shape - x))
-
-
-def _gamma_root(shape: float, level: float, low: float, high: float, rising: bool) -> float:
-    lo = float(low)
-    hi = float(high)
-    for _ in range(100):
-        mid = 0.5 * (lo + hi)
-        if (_gamma_response(shape, mid) < level) == rising:
-            lo = mid
-        else:
-            hi = mid
-    return float(0.5 * (lo + hi))
-
-
-def _gamma_dimensionless_rise(shape: float) -> float:
-    t10 = _gamma_root(shape, 0.10, 0.0, shape, True)
-    t90 = _gamma_root(shape, 0.90, 0.0, shape, True)
-    return float(max(t90 - t10, 1e-9))
-
-
-def _gamma_tau_from_rise(response_rise_ns: float, gamma_shape: float) -> float:
-    return float(response_rise_ns) / _gamma_dimensionless_rise(float(gamma_shape))
 
 
 def _load_r2076_time_response(spec_csv: str) -> tuple[Optional[float], Optional[float]]:
@@ -339,7 +311,10 @@ def _build_reconstructed_waveform(
     gamma_tau_ns: Optional[float],
     transit_time_ns: float,
     peak_frac: float,
+    kernel_tail_level: float = 1e-10,
 ) -> ReconstructedPulse:
+    response = resolve_response(response_rise_ns, response_fwhm_ns, gamma_shape, gamma_tau_ns, kernel_tail_level)
+    kernel = sample_kernel(response, sample_step_ns)
     centers = [0.5 * (float(lo) + float(hi)) for lo, hi in zip(ev.lo, ev.hi)]
     valid = [(t, int(c)) for t, c in zip(centers, ev.counts) if int(c) > 0]
     if not valid:
@@ -348,7 +323,7 @@ def _build_reconstructed_waveform(
     first_hit = min(t for t, _ in valid)
     last_hit = max(t for t, _ in valid)
     start = math.floor((first_hit - 2.0 * sample_step_ns) / sample_step_ns) * sample_step_ns
-    stop = last_hit + 12.0 * response_fwhm_ns
+    stop = last_hit + (len(kernel) - 1) * sample_step_ns
     n_samples = int(math.ceil((stop - start) / sample_step_ns)) + 1
     if n_samples < 2:
         n_samples = 2
@@ -373,21 +348,9 @@ def _build_reconstructed_waveform(
     photon_thr = float(peak_frac) * float(impulse[photon_peak])
     photon_t_frac = _crossing(time, impulse, photon_peak, photon_thr)
 
-    tau_ns = float(gamma_tau_ns) if gamma_tau_ns is not None else _gamma_tau_from_rise(response_rise_ns, gamma_shape)
-    kernel_samples = int(math.ceil(12.0 * response_fwhm_ns / sample_step_ns)) + 1
-    kernel = [0.0] * kernel_samples
-    for k in range(1, kernel_samples):
-        x = (float(k) * sample_step_ns) / tau_ns
-        kernel[k] = float((x / gamma_shape) ** gamma_shape * math.exp(gamma_shape - x)) if x > 0.0 else 0.0
+    kernel_samples = len(kernel)
 
-    voltage = [0.0] * n_samples
-    for i, amp in enumerate(impulse):
-        if amp <= 0.0:
-            continue
-        available = min(kernel_samples, n_samples - i)
-        for k in range(1, available):
-            voltage[i + k] += amp * kernel[k]
-
+    voltage = convolve_impulses(impulse, kernel)
     peak_idx = max(range(n_samples), key=lambda i: voltage[i])
     peak = float(voltage[peak_idx])
     if peak <= 0.0:
@@ -592,16 +555,11 @@ def _draw_waveform_panel(
         tx.DrawLatex(x_text, 0.60, f"rise t90-t10 = {pulse.t90 - pulse.t10:.4f} ns")
     if meta is not None:
         r2 = meta.get("r2", None)
-        chi2 = float(meta["chi2"])
-        ndf = int(meta["ndf"])
-        pval = float(meta["pvalue"])
+        residual = float(meta["weighted_residual"])
         if r2 is not None:
             tx.DrawLatex(x_text, 0.54, f"R^{{2}} = {float(r2):.4f}")
-        if ndf > 0:
-            tx.DrawLatex(x_text, 0.48, f"#chi^{{2}}/ndf = {chi2:.2f}/{ndf} = {chi2/ndf:.3f}")
-        else:
-            tx.DrawLatex(x_text, 0.48, f"#chi^{{2}}/ndf = {chi2:.2f}/0")
-        tx.DrawLatex(x_text, 0.42, f"p-value = {pval:.3g}")
+        tx.DrawLatex(x_text, 0.48, f"Weighted residual = {residual:.4g}")
+        tx.DrawLatex(x_text, 0.42, "Descriptive fit quality; no noise model")
     keepalive.append(tx)
     # PyROOT 객체 소멸로 overlay가 사라지는 문제 방지.
     h._overlay_keepalive = keepalive
@@ -622,6 +580,7 @@ def draw_one(
     sample_step_ns: float,
     gamma_shape: float,
     gamma_tau_ns: Optional[float],
+    kernel_tail_level: float = 1e-10,
 ) -> None:
     repo_root = _find_repo_root()
     if repo_root is None:
@@ -691,6 +650,7 @@ def draw_one(
         response_fwhm_ns=response_fwhm_ns,
         gamma_shape=gamma_shape,
         gamma_tau_ns=gamma_tau_ns,
+        kernel_tail_level=kernel_tail_level,
         transit_time_ns=transit_time_ns,
         peak_frac=peak_frac,
     )
@@ -701,6 +661,7 @@ def draw_one(
         response_fwhm_ns=response_fwhm_ns,
         gamma_shape=gamma_shape,
         gamma_tau_ns=gamma_tau_ns,
+        kernel_tail_level=kernel_tail_level,
         transit_time_ns=transit_time_ns,
         peak_frac=peak_frac,
     )
@@ -764,7 +725,7 @@ def draw_one(
         f"  anchor(LG T1) MPV={float(anchor_mpv):.3f}\n"
         f"  T1 MPV={float(mpv1) if mpv1 is not None else float('nan'):.3f}, selected event={ev_t1.event_id}, N={ev_t1.nphoton}\n"
         f"  T2 MPV={float(mpv2) if mpv2 is not None else float('nan'):.3f}, paired event={ev_t2.event_id}, N={ev_t2.nphoton}\n"
-        f"  waveform: rise={response_rise_ns:.3f} ns, fwhm={response_fwhm_ns:.3f} ns, transit={transit_time_ns:.3f} ns, dt={sample_step_ns:.3f} ns, shape={gamma_shape:.6f}, tau={tau_effective:.6f} ns\n"
+        f"  waveform: rise={response_rise_ns:.3f} ns, fwhm={response_fwhm_ns:.3f} ns, transit={transit_time_ns:.3f} ns, dt={sample_step_ns:.3f} ns, shape={gamma_shape:.6f}, rise_tau={tau_effective:.6f} ns\n"
         f"PNG 저장: {output_path}"
     )
 
@@ -800,15 +761,15 @@ def main() -> None:
     parser.add_argument(
         "--sample-step-ns",
         type=float,
-        default=0.05,
+        default=0.01,
         help="waveform 샘플 간격(ns). 작게 줄수록 파형이 더 부드러워짐",
     )
-    parser.add_argument("--gamma-shape", type=float, default=1.915604733026, help="gamma pulse shape")
+    parser.add_argument("--gamma-shape", type=float, default=1.915604733026, help="two-sided gamma shape [0.1, 100]; independent rise/fall time scales")
     parser.add_argument(
         "--gamma-tau-ns",
         type=float,
         default=None,
-        help="gamma pulse tau(ns), 미지정시 rise+shape로 자동 보정",
+        help="상승 tau(ns) 호환 검사용: rise+shape와 일치해야 함; 보통 생략",
     )
     parser.add_argument(
         "-o",
@@ -817,6 +778,7 @@ def main() -> None:
         help="출력 PNG (기본: figures/event_optical_mpv_matrix_<stem>.png)",
     )
     parser.add_argument("-l", "--rootio-lib", default=None)
+    parser.add_argument("--kernel-tail-level", type=float, default=1e-10, help="SPE tail/peak cutoff, independent of FWHM (default 1e-10)")
     args = parser.parse_args()
 
     if args.xmax <= 0.0:
@@ -860,6 +822,8 @@ def main() -> None:
 
     response_rise_ns = float(args.response_rise_ns) if args.response_rise_ns is not None else float(spec_rise_ns if spec_rise_ns is not None else 1.0)
     response_fwhm_ns = float(args.response_fwhm_ns) if args.response_fwhm_ns is not None else 3.0
+    response = resolve_response(response_rise_ns, response_fwhm_ns, args.gamma_shape, args.gamma_tau_ns, args.kernel_tail_level)
+    print(f"[SPE two-sided-gamma-v1] rise_tau={response.rise_tau_ns:.9g} ns, fall_tau={response.fall_tau_ns:.9g} ns, duration={response.duration_ns:.9g} ns, tail_level={args.kernel_tail_level:g}; peak-normalized ideal response")
     transit_time_ns = float(args.transit_time_ns) if args.transit_time_ns is not None else float(spec_transit_ns if spec_transit_ns is not None else 0.0)
 
     print(
@@ -894,6 +858,7 @@ def main() -> None:
         sample_step_ns=args.sample_step_ns,
         gamma_shape=args.gamma_shape,
         gamma_tau_ns=args.gamma_tau_ns,
+        kernel_tail_level=args.kernel_tail_level,
     )
 
 

@@ -17,10 +17,17 @@ FATE_ORDER = [
     "qe_reject",
     "absorb_scint",
     "absorb_lg",
+    "absorb_lg_surface",
+    "absorb_other_surface",
     "absorb_glass",
     "absorb_si",
     "absorb_other",
+    "world_exit",
+    "wls_conversion",
+    "no_rindex",
+    "unknown",
     "kill_world",
+    "kill_nav",
     "kill_other",
 ]
 
@@ -29,10 +36,17 @@ FATE_COLORS = {
     "qe_reject": "#98df8a",
     "absorb_scint": "#ff7f0e",
     "absorb_lg": "#1f77b4",
+    "absorb_lg_surface": "#17becf",
+    "absorb_other_surface": "#bcbd22",
     "absorb_glass": "#aec7e8",
     "absorb_si": "#9467bd",
     "absorb_other": "#c5b0d5",
+    "world_exit": "#d62728",
+    "wls_conversion": "#7f7f7f",
+    "no_rindex": "#e377c2",
+    "unknown": "#8c564b",
     "kill_world": "#d62728",
+    "kill_nav": "#e377c2",
     "kill_other": "#8c564b",
 }
 
@@ -100,22 +114,31 @@ class PathHistFile:
     mean_path_mm_all: float
     total_counts: np.ndarray
     fates: dict[str, dict] = field(default_factory=dict)
+    n_events: int = 100
 
 
 def _is_size_scan_tag(tag: str) -> bool:
     return tag in SIZE_FROM_TAG and not tag.endswith("_nolg")
 
 
-def _parse_tag(path: str) -> str:
+def _parse_hist_filename(path: str) -> tuple[str, int]:
+    """Return (tag, n_events) from '<stem>_<N>ev.path_hist.txt' (stem may be path_4x4 or inlet_gel_4x4)."""
     base = os.path.basename(path)
-    m = re.match(r"path_(.+)_100ev\.path_hist\.txt$", base)
+    m = re.match(r"(.+)_(\d+)ev\.path_hist\.txt$", base)
     if not m:
         raise ValueError(f"unexpected hist filename: {path}")
-    return m.group(1)
+    stem = m.group(1)
+    n_events = int(m.group(2))
+    tag = stem[len("path_") :] if stem.startswith("path_") else stem
+    return tag, n_events
+
+
+def _parse_tag(path: str) -> str:
+    return _parse_hist_filename(path)[0]
 
 
 def load_path_hist(path: str) -> PathHistFile:
-    tag = _parse_tag(path)
+    tag, n_events = _parse_hist_filename(path)
     meta: dict[str, str] = {}
     total_counts: list[int] | None = None
     fates: dict[str, dict] = {}
@@ -170,6 +193,7 @@ def load_path_hist(path: str) -> PathHistFile:
         mean_path_mm_all=float(meta.get("mean_path_mm_all", "0")),
         total_counts=np.array(total_counts, dtype=np.int64),
         fates=fates,
+        n_events=n_events,
     )
 
 
@@ -264,6 +288,109 @@ def plot_fate_counts(hists: list[PathHistFile], out_png: str) -> None:
     plt.close(fig)
 
 
+def plot_fate_lg_vs_nolg(
+    hists: list[PathHistFile],
+    out_png: str,
+    *,
+    y_mode: str = "fraction",
+) -> None:
+    """Stacked fate bars for 4x4 LG vs 4x4 no-LG (categorical x)."""
+    order = ["4x4", "4x4_nolg"]
+    labels = {"4x4": "4×4 LG", "4x4_nolg": "4×4 no-LG"}
+    by_tag = {h.tag: h for h in hists}
+    selected = [by_tag[t] for t in order if t in by_tag]
+    if len(selected) < 2:
+        raise RuntimeError("need both path_4x4 and path_4x4_nolg hist files")
+
+    xs = np.arange(len(selected), dtype=float)
+    fig, ax = plt.subplots(figsize=(6.5, 5.4))
+    bottom = np.zeros(len(selected))
+    for fate in FATE_ORDER:
+        if y_mode == "fraction":
+            vals = np.array([h.fates.get(fate, {}).get("frac", 0.0) for h in selected])
+        else:
+            vals = np.array([h.fates.get(fate, {}).get("count", 0) for h in selected], dtype=float)
+        ax.bar(xs, vals, bottom=bottom, width=0.55, label=fate, color=FATE_COLORS.get(fate))
+        bottom += vals
+
+    ax.set_xticks(xs)
+    ax.set_xticklabels([labels.get(h.tag, h.tag) for h in selected])
+    ax.set_xlabel("geometry")
+    if y_mode == "fraction":
+        ax.set_ylabel("fraction of optical photon tracks")
+        ax.set_title("Optical photon fate: 4×4 LG vs no-LG (100 ev, v5)")
+        ax.set_ylim(0, 1.05)
+    else:
+        totals = np.array([h.total_tracks for h in selected], dtype=float)
+        for x, tot in zip(xs, totals):
+            ax.text(x, tot, f"{tot / 100.0:.0f}/ev", ha="center", va="bottom", fontsize=8)
+        ax.set_ylabel("optical photon tracks (100 events)")
+        ax.set_title("Optical photon fate counts: 4×4 LG vs no-LG (v5, 100 ev)")
+        ax.set_ylim(0, totals.max() * 1.1)
+    _add_fate_stacked_legend(ax)
+    fig.subplots_adjust(bottom=0.28)
+    fig.savefig(out_png, dpi=150, bbox_inches="tight", pad_inches=0.08)
+    plt.close(fig)
+
+
+def plot_fate_before_after(
+    selected: list[PathHistFile],
+    labels: list[str],
+    out_png: str,
+    *,
+    y_mode: str = "fraction",
+    title: str | None = None,
+) -> None:
+    """Stacked fate bars for before/after (or any ordered categorical comparison)."""
+    if len(selected) < 2 or len(selected) != len(labels):
+        raise RuntimeError("need matching selected hists and labels (len>=2)")
+
+    xs = np.arange(len(selected), dtype=float)
+    fig, ax = plt.subplots(figsize=(7.0, 5.4))
+    bottom = np.zeros(len(selected))
+    for fate in FATE_ORDER:
+        if y_mode == "fraction":
+            vals = np.array([h.fates.get(fate, {}).get("frac", 0.0) for h in selected])
+        else:
+            vals = np.array(
+                [
+                    h.fates.get(fate, {}).get("count", 0) / max(h.n_events, 1)
+                    for h in selected
+                ],
+                dtype=float,
+            )
+        ax.bar(xs, vals, bottom=bottom, width=0.55, label=fate, color=FATE_COLORS.get(fate))
+        bottom += vals
+
+    ax.set_xticks(xs)
+    ax.set_xticklabels(labels)
+    ax.set_xlabel("configuration")
+    if y_mode == "fraction":
+        ax.set_ylabel("fraction of optical photon tracks")
+        ax.set_title(title or "Optical photon fate: before vs after")
+        ax.set_ylim(0, 1.05)
+    else:
+        totals_per_ev = np.array(
+            [h.total_tracks / max(h.n_events, 1) for h in selected], dtype=float
+        )
+        for x, tot, h in zip(xs, totals_per_ev, selected):
+            ax.text(
+                x,
+                tot,
+                f"{tot:.0f}/ev\n({h.n_events} ev)",
+                ha="center",
+                va="bottom",
+                fontsize=8,
+            )
+        ax.set_ylabel("optical photon tracks / event")
+        ax.set_title(title or "Optical photon fate counts/ev: before vs after")
+        ax.set_ylim(0, totals_per_ev.max() * 1.18)
+    _add_fate_stacked_legend(ax)
+    fig.subplots_adjust(bottom=0.28)
+    fig.savefig(out_png, dpi=150, bbox_inches="tight", pad_inches=0.08)
+    plt.close(fig)
+
+
 def plot_mean_path(hists: list[PathHistFile], out_png: str) -> None:
     hists = sorted(hists, key=lambda h: h.trigger_size)
     fig, ax = plt.subplots(figsize=(8, 5.2))
@@ -271,6 +398,8 @@ def plot_mean_path(hists: list[PathHistFile], out_png: str) -> None:
     for fate, style in [
         ("detected", "o-"),
         ("kill_world", "s--"),
+        ("world_exit", "s-"),
+        ("unknown", "x:"),
         ("absorb_scint", "^:"),
         ("absorb_lg", "v-."),
     ]:
@@ -572,6 +701,17 @@ def main() -> None:
     if len(lg_nolg_hists) >= 2:
         import ROOT
 
+        plot_fate_lg_vs_nolg(
+            lg_nolg_hists,
+            os.path.join(fig_dir, "fate_fraction_4x4_LG_vs_noLG.png"),
+            y_mode="fraction",
+        )
+        plot_fate_lg_vs_nolg(
+            lg_nolg_hists,
+            os.path.join(fig_dir, "fate_counts_4x4_LG_vs_noLG.png"),
+            y_mode="counts",
+        )
+
         lg_nolg_colors = {
             "4x4": ROOT.kGreen + 2,
             "4x4_nolg": ROOT.kMagenta + 1,
@@ -614,6 +754,38 @@ def main() -> None:
         )
     else:
         print("skip 4x4 LG vs no-LG overlays (need path_4x4 and path_4x4_nolg hist files)")
+
+    before_path = os.path.join(scan_dir, "path_4x4_100ev.path_hist.txt")
+    after_path = os.path.join(scan_dir, "inlet_gel_4x4_10ev.path_hist.txt")
+    if os.path.isfile(before_path) and os.path.isfile(after_path):
+        before_h = load_path_hist(before_path)
+        after_h = load_path_hist(after_path)
+        ba = [before_h, after_h]
+        ba_labels = [
+            f"before\n(flush, {before_h.n_events} ev)",
+            f"after\n(inlet gel, {after_h.n_events} ev)",
+        ]
+        plot_fate_before_after(
+            ba,
+            ba_labels,
+            os.path.join(fig_dir, "fate_fraction_4x4_LG_before_after_inlet_gel.png"),
+            y_mode="fraction",
+            title="Optical photon fate: before vs after inlet gel (4×4 LG)",
+        )
+        plot_fate_before_after(
+            ba,
+            ba_labels,
+            os.path.join(fig_dir, "fate_counts_per_ev_4x4_LG_before_after_inlet_gel.png"),
+            y_mode="counts",
+            title="Optical photon fate counts/ev: before vs after inlet gel (4×4 LG)",
+        )
+        print("wrote before/after inlet-gel fate plots")
+    else:
+        print(
+            "skip before/after inlet-gel fate plots "
+            "(need path_4x4_100ev.path_hist.txt and inlet_gel_4x4_10ev.path_hist.txt)"
+        )
+
     print(f"figures in {fig_dir}")
 
 

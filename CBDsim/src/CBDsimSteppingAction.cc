@@ -6,6 +6,10 @@
 #include "G4ParticleDefinition.hh"
 #include "G4ParticleTypes.hh"
 #include "G4OpticalPhoton.hh"
+#include "G4RunManager.hh"
+#include "G4Event.hh"
+#include "G4TouchableHistory.hh"
+#include <cstdlib>
 #include "G4UnitsTable.hh"
 #include <iomanip>
 #include <string>
@@ -37,6 +41,19 @@ CBDsimSteppingAction::CBDsimSteppingAction(CBDsimEventAction* evtAct)
 CBDsimSteppingAction::~CBDsimSteppingAction() {}
 void CBDsimSteppingAction::UserSteppingAction(const G4Step* step)
 {
+  // Optional small primary-only record; does not change tracking or RNG state.
+  static const bool auditPrimary = std::getenv("CBDsim_PRIMARY_ENTRY_AUDIT") != nullptr;
+  if (auditPrimary && step->GetTrack()->GetParentID()==0 && step->GetTrack()->GetTrackID()==1) {
+    const auto* pre = step->GetPreStepPoint();
+    auto* pv = pre->GetPhysicalVolume();
+    if (pv && pv->GetName()=="protoScintPhys" && pre->GetStepStatus()==fGeomBoundary) {
+      const auto local = pre->GetTouchableHandle()->GetHistory()->GetTopTransform().TransformPoint(pre->GetPosition());
+      G4cout << std::setprecision(12) << "PRIMARY_ENTRY event="
+             << G4RunManager::GetRunManager()->GetCurrentEvent()->GetEventID()
+             << " trigger=" << pv->GetCopyNo() << " world_mm=" << pre->GetPosition()/CLHEP::mm
+             << " local_mm=" << local/CLHEP::mm << " direction=" << pre->GetMomentumDirection() << G4endl;
+    }
+  }
   if ( step->GetTrack()->GetDefinition() == G4OpticalPhoton::OpticalPhotonDefinition() ) {
     CBDsimOpticalDiagnostics::UserSteppingAction(step);
     return;

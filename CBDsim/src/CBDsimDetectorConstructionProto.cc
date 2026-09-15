@@ -18,17 +18,17 @@
 #include "G4Tubs.hh"
 #include "G4NistManager.hh"
 #include "G4SDManager.hh"
+#include "G4Exception.hh"
 
 #include "CBDsimSiPMSD.hh"
 
 #include <algorithm>
-#include <array>
 #include <cmath>
 #include <cstdlib>
 #include <vector>
 
 namespace {
-// Beam +z through thin z (5 mm). LG couples to 10x5 mm face (x-z plane, -y face), extends to -y.
+// Beam +z through thin z (5 mm). LG couples to the 40x5 mm x-z face and extends toward -y.
 constexpr G4double kHxWide = 20 * mm;
 constexpr G4double kHyLong = 30.0 * mm;
 constexpr G4double kHzThin = 2.5 * mm;
@@ -37,17 +37,11 @@ constexpr G4double kLguide = 30.0 * mm;
 constexpr G4double kRguide = 7.5 * mm;
 constexpr G4int kNPhi = 256;
 constexpr G4int kNSlice = 20;
-/**
- * y-offset between PS bottom and LG top. Set to 0 (flush) with vacuum world: no n!=1 layer between
- * scint and LG for optics. If GeomNav1002 increases at coplanar boundaries, restore a um gap.
- */
-constexpr G4double kLGZGap = 0.0 * mm;
-/** y gap between LG tip and SiPM package (LG tessellated cap vs G4Tubs). 0 = flush in vacuum. */
-constexpr G4double kSiPMLGAirGap = 0.0 * mm;
-/** Index-matching grease (Gelatin n≈1.52) between LG tip and SiPM window. */
+/** Distinct inlet grease layer: scint ends at -kHyLong; LG starts one layer below. */
+constexpr G4double kScintLGGelT = 0.02 * mm;
+constexpr G4double kLGZGap = kScintLGGelT;
+/** Distinct outlet grease layer, flush with LG (or scint in no-LG mode). */
 constexpr G4double kSiPMGelT = 0.10 * mm;
-/** Gel overlaps into LG tip opening for flush navigation (no vacuum sliver). */
-constexpr G4double kLGTipGelOverlap = 0.02 * mm;
 /** Axial half-length of tip Al ring (covers LG|SiPM junction, not just 8 um foil). */
 constexpr G4double kTipRingHalfY = 0.30 * mm;
 
@@ -56,9 +50,7 @@ constexpr G4double kOuterAirSafetyMargin = 1.0 * mm;
 
 // Match legacy tower wrapping (CBDsimDetectorConstruction)
 constexpr G4double kFoilT = 0.016 * mm;
-/** Corner foil pad on scint -y face (covers scint-only wedge outside LG polygon). */
-constexpr G4double kFoilCornerPadMax = 4.0 * mm;
-/** LG tip ring: outer radius extension beyond kRguide (covers polygon–circle sliver at outlet). */
+/** Radial foil sleeve outside the circular sensor stack; does not enter its aperture. */
 constexpr G4double kTipRingOuterExtra = 0.05 * mm;
 constexpr G4double kAirGap = 0.01 * mm;
 constexpr G4double kEnvMarginXY = 2.0 * mm;
@@ -98,15 +90,25 @@ void rectBoundaryXZ(G4double phi, G4double hx, G4double hz, G4double& px, G4doub
 G4TessellatedSolid* BuildLightGuideTessellated() {
   auto* ts = new G4TessellatedSolid("ProtoLightGuide");
 
+  // Uniform azimuths alone cut off the rectangular inlet corners. Include the four
+  // exact corner directions in EVERY ring so adjacent rings keep matching topology.
+  std::vector<G4double> angles;
+  for (G4int j = 0; j < kNPhi; ++j) angles.push_back(twopi * j / kNPhi);
+  const G4double corner = std::atan2(kHzThin, kHxWide);
+  for (const auto angle : {corner, pi-corner, pi+corner, twopi-corner}) angles.push_back(angle);
+  std::sort(angles.begin(), angles.end());
+  angles.erase(std::unique(angles.begin(), angles.end(),
+      [](G4double a, G4double b) { return std::abs(a-b) < 1.e-12; }), angles.end());
+  const G4int nPhi = static_cast<G4int>(angles.size());
   const G4int nRings = kNSlice + 1;
   std::vector<G4ThreeVector> v;
-  v.reserve(static_cast<size_t>(nRings * kNPhi));
+  v.reserve(static_cast<size_t>(nRings * nPhi));
 
   for (G4int i = 0; i < nRings; ++i) {
     const G4double t = static_cast<G4double>(i) / static_cast<G4double>(kNSlice);
     const G4double y = -kHyLong - kLGZGap - t * kLguide;
-    for (G4int j = 0; j < kNPhi; ++j) {
-      const G4double phi = twopi * static_cast<G4double>(j) / static_cast<G4double>(kNPhi);
+    for (G4int j = 0; j < nPhi; ++j) {
+      const G4double phi = angles[j];
       G4double rx, rz;
       rectBoundaryXZ(phi, kHxWide, kHzThin, rx, rz);
       const G4double cx = kRguide * std::cos(phi);
@@ -117,11 +119,11 @@ G4TessellatedSolid* BuildLightGuideTessellated() {
     }
   }
 
-  auto idx = [](G4int ring, G4int j) { return static_cast<size_t>(ring * kNPhi + j); };
+  auto idx = [nPhi](G4int ring, G4int j) { return static_cast<size_t>(ring * nPhi + j); };
 
   for (G4int i = 0; i < kNSlice; ++i) {
-    for (G4int j = 0; j < kNPhi; ++j) {
-      const G4int jp = (j + 1) % kNPhi;
+    for (G4int j = 0; j < nPhi; ++j) {
+      const G4int jp = (j + 1) % nPhi;
       const G4ThreeVector& a = v[idx(i, j)];
       const G4ThreeVector& b = v[idx(i, jp)];
       const G4ThreeVector& c = v[idx(i + 1, jp)];
@@ -133,14 +135,14 @@ G4TessellatedSolid* BuildLightGuideTessellated() {
   }
 
   const G4ThreeVector cbot(0.0, -kHyLong - kLGZGap, 0.0);
-  for (G4int j = 0; j < kNPhi; ++j) {
-    const G4int jp = (j + 1) % kNPhi;
+  for (G4int j = 0; j < nPhi; ++j) {
+    const G4int jp = (j + 1) % nPhi;
     ts->AddFacet(new G4TriangularFacet(cbot, v[idx(0, jp)], v[idx(0, j)], ABSOLUTE));
   }
 
   const G4ThreeVector ctop(0.0, -kHyLong - kLGZGap - kLguide, 0.0);
-  for (G4int j = 0; j < kNPhi; ++j) {
-    const G4int jp = (j + 1) % kNPhi;
+  for (G4int j = 0; j < nPhi; ++j) {
+    const G4int jp = (j + 1) % nPhi;
     ts->AddFacet(new G4TriangularFacet(ctop, v[idx(kNSlice, j)], v[idx(kNSlice, jp)], ABSOLUTE));
   }
 
@@ -223,11 +225,26 @@ G4VPhysicalVolume* CBDsimDetectorConstructionProto::Construct() {
   G4RotationMatrix rotTrig2;
   rotTrig2.rotateZ(halfpi);
 
+  // Fixed world beam, rigid assembly motion toward each local window (-y).
+  // Thus the beam crosses local +y=s, approaching the opposite end (+30 mm).
+  G4double scanS = 0.;
+  if (const char* value = std::getenv("CBDsim_PROTO_SCAN_S_MM")) {
+    char* end = nullptr;
+    scanS = std::strtod(value, &end) * mm;
+    if (end == value || *end != '\0' || !std::isfinite(scanS) || scanS < 0. || scanS > 29.5*mm) {
+      G4Exception("CBDsimDetectorConstructionProto::Construct", "InvalidScanPosition", FatalException,
+                  "CBDsim_PROTO_SCAN_S_MM must be finite and in [0,29.5] mm.");
+    }
+  }
+  G4cout << "[Proto scan] s_mm=" << scanS/mm
+         << " T1_translation=" << G4ThreeVector(0.,-scanS,kZTrig1)/mm
+         << " T2_translation=" << G4ThreeVector(scanS,0.,kZTrig2)/mm << G4endl;
+
   auto trWorld1 = [&](const G4Transform3D& localInAssembly) {
-    return G4Transform3D(G4RotationMatrix(), G4ThreeVector(0., 0., kZTrig1)) * localInAssembly;
+    return G4Transform3D(G4RotationMatrix(), G4ThreeVector(0., -scanS, kZTrig1)) * localInAssembly;
   };
   auto trWorld2 = [&](const G4Transform3D& localInAssembly) {
-    return G4Transform3D(rotTrig2, G4ThreeVector(0., 0., kZTrig2)) * localInAssembly;
+    return G4Transform3D(rotTrig2, G4ThreeVector(scanS, 0., kZTrig2)) * localInAssembly;
   };
 
   auto* scintSolid = new G4Box("protoScint", kHxWide, kHyLong, kHzThin);
@@ -263,20 +280,27 @@ G4VPhysicalVolume* CBDsimDetectorConstructionProto::Construct() {
   }
 
   // SiPM stack: LG mode = circular tubs at LG tip; no-LG = rectangular boxes on scint -y.
+  // Scint -y face is always y=-kHyLong; LG inlet is shifted by kLGZGap (= inlet gel thickness).
   G4RotationMatrix sipmRot;
   sipmRot.rotateX(-halfpi);
-  const G4double yScintFace = -kHyLong - kLGZGap;
-  const G4double yCouplingFace = withLG ? (yScintFace - kLguide) : yScintFace;
+  const G4double yScintFace = -kHyLong;
+  const G4double yLgInlet = yScintFace - kLGZGap;
+  const G4double yCouplingFace = withLG ? (yLgInlet - kLguide) : yScintFace;
   const G4double gelHalfY = kSiPMGelT * 0.5;
   const G4double windowHalfY = (kSiPMH - kFilterT) * 0.5;
   const G4double waferHalfY = kFilterT * 0.5;
-  const G4double yGelCenter = yCouplingFace - gelHalfY + kLGTipGelOverlap;
+  const G4double yGelCenter = yCouplingFace - gelHalfY;
   const G4double yWindowCenter = yGelCenter - gelHalfY - windowHalfY;
   const G4double yWaferCenter = yWindowCenter - windowHalfY - waferHalfY;
 
   G4cout << "[Proto geometry] coupling face y=" << yCouplingFace / mm << " mm, gel center y="
          << yGelCenter / mm << " mm (gel top y=" << (yGelCenter + gelHalfY) / mm << " mm, overlap "
-         << kLGTipGelOverlap / mm << " mm)" << G4endl;
+         << 0.0 << " mm)" << G4endl;
+  if (withLG) {
+    G4cout << "[Proto geometry] scint-LG inlet gel: T=" << kScintLGGelT / mm
+           << " mm, overlap=" << 0.0 << " mm, LG inlet y=" << yLgInlet / mm
+           << " mm" << G4endl;
+  }
 
   G4LogicalVolume* sipmGelLog = nullptr;
   G4LogicalVolume* sipmWindowLog = nullptr;
@@ -332,6 +356,16 @@ G4VPhysicalVolume* CBDsimDetectorConstructionProto::Construct() {
   sipmWaferLog->SetVisAttributes(fVisSiPM);
   fProtoWaferLog = sipmWaferLog;
 
+  // Inlet optical grease between scint -y and LG (LG mode only).
+  G4LogicalVolume* scintLGGelLog = nullptr;
+  if (withLG) {
+    const G4double inletGelHalfY = 0.5 * kScintLGGelT;
+    auto* scintLGGelS = new G4Box("protoScintLGGel", kHxWide, inletGelHalfY, kHzThin);
+    scintLGGelLog =
+        new G4LogicalVolume(scintLGGelS, FindMaterial("Gelatin"), "protoScintLGGelLog");
+    scintLGGelLog->SetVisAttributes(fVisGel);
+  }
+
   const G4double xi = kHxWide + kAirGap;
   const G4double yi = kHyLong + kAirGap;
   const G4double zi = kHzThin + kAirGap;
@@ -352,23 +386,14 @@ G4VPhysicalVolume* CBDsimDetectorConstructionProto::Construct() {
   foilWrapLog->SetVisAttributes(fVisFoil);
   new G4LogicalSkinSurface("protoAlSurfWrap", foilWrapLog, FindSurface("AluminumSurf"));
 
-  // Wedge leak patch: thin Al pads at the 4 corners of the scint -y face (LG polygon misses these).
-  const G4double cornerPadHalf =
-      std::min(kFoilCornerPadMax, 0.45 * std::min(kHxWide, kHzThin));
-  auto* foilCornerS = new G4Box("protoFoilCorner", cornerPadHalf, ft2, cornerPadHalf);
-  auto* foilCornerLog =
-      new G4LogicalVolume(foilCornerS, FindMaterial("Aluminum"), "protoFoilCornerLog");
-  foilCornerLog->SetVisAttributes(fVisFoil);
-  new G4LogicalSkinSurface("protoAlSurfCorner", foilCornerLog, FindSurface("AluminumSurf"));
-  const G4double yCorner = -kHyLong - kAirGap - ft2;
-  const G4double xCorner = kHxWide - cornerPadHalf;
-  const G4double zCorner = kHzThin - cornerPadHalf;
+  // No corner pads: the LG inlet now covers the exact rectangle. Pads occupied
+  // the inlet grease/LG volume (and duplicated the no-LG foil strips).
 
   // LG tip annulus (LG mode only): blocks radial leak at outlet.
   const G4double tipRingInnerR =
-      kRguide * std::cos(pi / static_cast<G4double>(kNPhi)) - 0.01 * mm;
+      kRguide + kAirGap;
   const G4double tipRingOuterR = kRguide + kAirGap + kFoilT + kTipRingOuterExtra;
-  const G4double yTipRing = yCouplingFace - kTipRingHalfY + kLGTipGelOverlap;
+  const G4double yTipRing = yCouplingFace - kTipRingHalfY;
   auto* tipRingS =
       new G4Tubs("protoFoilTipRing", tipRingInnerR, tipRingOuterR, kTipRingHalfY, 0., twopi);
   auto* tipRingLog =
@@ -411,6 +436,17 @@ G4VPhysicalVolume* CBDsimDetectorConstructionProto::Construct() {
     auto* sipmPV2 =
         new G4PVPlacement(trWorld2(localEnv), sipmEnvLog, "protoSipmEnvPhys", worldLog, false, 1);
 
+    G4PVPlacement* scintLGGelPV1 = nullptr;
+    G4PVPlacement* scintLGGelPV2 = nullptr;
+    if (withLG && scintLGGelLog) {
+      const G4double yInletGel = -kHyLong - 0.5 * kScintLGGelT;
+      const G4Transform3D localInletGel(G4RotationMatrix(), G4ThreeVector(0., yInletGel, 0.));
+      scintLGGelPV1 = new G4PVPlacement(trWorld1(localInletGel), scintLGGelLog, "protoScintLGGelPhys",
+                                        worldLog, false, 0);
+      scintLGGelPV2 = new G4PVPlacement(trWorld2(localInletGel), scintLGGelLog, "protoScintLGGelPhys",
+                                        worldLog, false, 1);
+    }
+
     if (withLG) {
       new G4LogicalBorderSurface("protoLG1ToWorldReflect", lgPV1, worldPhys, FindSurface("AluminumSurf"));
       new G4LogicalBorderSurface("protoWorldToLG1Reflect", worldPhys, lgPV1, FindSurface("AluminumSurf"));
@@ -421,6 +457,25 @@ G4VPhysicalVolume* CBDsimDetectorConstructionProto::Construct() {
       new G4LogicalBorderSurface("protoGel1ToLG1Trans", sipmGelPV1, lgPV1, FindSurface("AirSurf"));
       new G4LogicalBorderSurface("protoLG2ToGel2Trans", lgPV2, sipmGelPV2, FindSurface("AirSurf"));
       new G4LogicalBorderSurface("protoGel2ToLG2Trans", sipmGelPV2, lgPV2, FindSurface("AirSurf"));
+
+      if (scintLGGelPV1 && scintLGGelPV2) {
+        new G4LogicalBorderSurface("protoScint1ToInletGel1Trans", scintPV1, scintLGGelPV1,
+                                   FindSurface("AirSurf"));
+        new G4LogicalBorderSurface("protoInletGel1ToScint1Trans", scintLGGelPV1, scintPV1,
+                                   FindSurface("AirSurf"));
+        new G4LogicalBorderSurface("protoScint2ToInletGel2Trans", scintPV2, scintLGGelPV2,
+                                   FindSurface("AirSurf"));
+        new G4LogicalBorderSurface("protoInletGel2ToScint2Trans", scintLGGelPV2, scintPV2,
+                                   FindSurface("AirSurf"));
+        new G4LogicalBorderSurface("protoLG1ToInletGel1Trans", lgPV1, scintLGGelPV1,
+                                   FindSurface("AirSurf"));
+        new G4LogicalBorderSurface("protoInletGel1ToLG1Trans", scintLGGelPV1, lgPV1,
+                                   FindSurface("AirSurf"));
+        new G4LogicalBorderSurface("protoLG2ToInletGel2Trans", lgPV2, scintLGGelPV2,
+                                   FindSurface("AirSurf"));
+        new G4LogicalBorderSurface("protoInletGel2ToLG2Trans", scintLGGelPV2, lgPV2,
+                                   FindSurface("AirSurf"));
+      }
     } else {
       new G4LogicalBorderSurface("protoScint1ToGel1Trans", scintPV1, sipmGelPV1, FindSurface("AirSurf"));
       new G4LogicalBorderSurface("protoGel1ToScint1Trans", sipmGelPV1, scintPV1, FindSurface("AirSurf"));
@@ -441,18 +496,6 @@ G4VPhysicalVolume* CBDsimDetectorConstructionProto::Construct() {
     new G4PVPlacement(trWorld1(tWrap), foilWrapLog, "protoFoilWrapPhys", worldLog, false, 0);
     new G4PVPlacement(trWorld2(tWrap), foilWrapLog, "protoFoilWrapPhys", worldLog, false, 1);
 
-    const std::array<G4ThreeVector, 4> cornerPos = {
-        G4ThreeVector(xCorner, yCorner, zCorner),
-        G4ThreeVector(-xCorner, yCorner, zCorner),
-        G4ThreeVector(xCorner, yCorner, -zCorner),
-        G4ThreeVector(-xCorner, yCorner, -zCorner),
-    };
-    for (const auto& pos : cornerPos) {
-      const G4Transform3D tc(G4RotationMatrix(), pos);
-      new G4PVPlacement(trWorld1(tc), foilCornerLog, "protoFoilCornerPhys", worldLog, false, 0);
-      new G4PVPlacement(trWorld2(tc), foilCornerLog, "protoFoilCornerPhys", worldLog, false, 1);
-    }
-
     const G4Transform3D tTipRing(G4Transform3D(tipRingRot, G4ThreeVector(0., yTipRing, 0.)));
     if (withLG) {
       new G4PVPlacement(trWorld1(tTipRing), tipRingLog, "protoFoilTipRingPhys", worldLog, false, 0);
@@ -470,16 +513,14 @@ G4VPhysicalVolume* CBDsimDetectorConstructionProto::Construct() {
     }
   }
 
-  // LG|world: AluminumSurf on taper sides (LG mode). Tip ring + window flush block outlet bypass.
+  // LG|world retains the existing reflective side surface; the sleeve is outside the sensor stack.
 
   return worldPhys;
 }
 
 void CBDsimDetectorConstructionProto::ConstructSDandField() {
-  // After CloseGeometry(); reports volume overlaps that often precede GeomNav1002 at runtime.
-  if (auto* w = G4PhysicalVolumeStore::GetInstance()->GetVolume("protoWorldPhys")) {
-    w->CheckOverlaps();
-  }
+  // Checking only worldPhys does not check its daughters. Full placement checks
+  // and coupling probes are provided by tests/proto_geometry (tolerance = 0).
   if (!fProtoWaferLog) return;
   auto* SDman = G4SDManager::GetSDMpointer();
   auto* sipmSD = new CBDsimSiPMSD("SiPMSDB", "SiPMSDBC", std::make_pair(1, 1));

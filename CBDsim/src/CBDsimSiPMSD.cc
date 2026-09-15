@@ -11,6 +11,8 @@
 #include "G4VTouchable.hh"
 #include "G4StepPoint.hh"
 #include "G4Exception.hh"
+#include "G4OpBoundaryProcess.hh"
+#include "G4ProcessManager.hh"
 #include "Randomize.hh"
 
 #include <atomic>
@@ -185,6 +187,15 @@ void CBDsimSiPMSD::Initialize(G4HCofThisEvent* hce) {
 
 G4bool CBDsimSiPMSD::ProcessHits(G4Step* step, G4TouchableHistory*) {
   if (step->GetTrack()->GetDefinition() != G4OpticalPhoton::OpticalPhotonDefinition()) return false;
+  // Reflections can produce a zero-length relocation step with a transient
+  // wafer pre-volume. It is not a physical wafer arrival and must not sample QE.
+  if (step->GetPostStepPoint()->GetStepStatus() == fGeomBoundary) {
+    auto* processes = step->GetTrack()->GetDefinition()->GetProcessManager()->GetPostStepProcessVector();
+    for (G4int i=0; processes && i<processes->entries(); ++i) {
+      auto* boundary = dynamic_cast<G4OpBoundaryProcess*>((*processes)[i]);
+      if (boundary && boundary->GetStatus() == StepTooSmall) return false;
+    }
+  }
   const G4double energy = step->GetTrack()->GetTotalEnergy();
   const G4double wavelengthNm = (h_Planck * c_light / energy) / nm;
   const QeTable& qeTable = GetQeTable();
@@ -217,7 +228,9 @@ G4bool CBDsimSiPMSD::ProcessHits(G4Step* step, G4TouchableHistory*) {
     }
   }
 
-  G4double hitTime  = step->GetPostStepPoint()->GetGlobalTime();
+  // QE is evaluated on the first wafer step. Timestamp the entry,
+  // not the later bulk step endpoint (absorption/boundary transport latency).
+  G4double hitTime = step->GetPreStepPoint()->GetGlobalTime();
   G4int towerX = fTowerXY.first;
   G4int towerY = fTowerXY.second;
   G4int sipmX = SiPMnum/towerY;

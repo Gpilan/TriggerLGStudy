@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+from spe_response import resolve_response, sample_kernel, convolve_impulses, _gamma_tau_from_rise
+
 import argparse
 import csv
 import math
@@ -143,43 +145,15 @@ def _toa_local_linear_from_xy(
     yfit = [a * xx + b for xx in xs]
     chi2 = float(sum(wi * (yy - ff) ** 2 for wi, yy, ff in zip(ws, ys, yfit)))
     ndf = int(max(len(xs) - 2, 0))
-    pval = float(math.exp(-0.5 * chi2)) if ndf > 0 else 1.0
     return float(t_cross), {
         "method": "local_linear",
+        "slope_per_ns": a,
         "r2": r2,
         "nfit": len(xs),
-        "chi2": chi2,
-        "ndf": ndf,
-        "pvalue": pval,
+        "weighted_residual": chi2,
+        "residual_dof": ndf,
+        "quality_model": "descriptive fit; no calibrated noise covariance",
     }
-
-
-def _gamma_response(shape: float, x: float) -> float:
-    if x <= 0.0:
-        return 0.0
-    return float((x / shape) ** shape * math.exp(shape - x))
-
-
-def _gamma_root(shape: float, level: float, low: float, high: float, rising: bool) -> float:
-    lo = float(low)
-    hi = float(high)
-    for _ in range(100):
-        mid = 0.5 * (lo + hi)
-        if (_gamma_response(shape, mid) < level) == rising:
-            lo = mid
-        else:
-            hi = mid
-    return float(0.5 * (lo + hi))
-
-
-def _gamma_dimensionless_rise(shape: float) -> float:
-    t10 = _gamma_root(shape, 0.10, 0.0, shape, True)
-    t90 = _gamma_root(shape, 0.90, 0.0, shape, True)
-    return float(max(t90 - t10, 1e-9))
-
-
-def _gamma_tau_from_rise(response_rise_ns: float, gamma_shape: float) -> float:
-    return float(response_rise_ns) / _gamma_dimensionless_rise(float(gamma_shape))
 
 
 def _load_r2076_time_response(spec_csv: str) -> tuple[Optional[float], Optional[float]]:
@@ -217,7 +191,10 @@ def _build_reconstructed_waveform(
     gamma_shape: float,
     gamma_tau_ns: Optional[float],
     transit_time_ns: float,
+    kernel_tail_level: float = 1e-10,
 ):
+    response = resolve_response(response_rise_ns, response_fwhm_ns, gamma_shape, gamma_tau_ns, kernel_tail_level)
+    kernel = sample_kernel(response, sample_step_ns)
     centers = [0.5 * (float(loi) + float(hii)) for loi, hii in zip(lo, hi)]
     valid = [(t, int(c)) for t, c in zip(centers, cnt) if int(c) > 0]
     if not valid:
@@ -226,7 +203,7 @@ def _build_reconstructed_waveform(
     first_hit = min(t for t, _ in valid)
     last_hit = max(t for t, _ in valid)
     start = math.floor((first_hit - 2.0 * sample_step_ns) / sample_step_ns) * sample_step_ns
-    stop = last_hit + 12.0 * response_fwhm_ns
+    stop = last_hit + (len(kernel) - 1) * sample_step_ns
     n_samples = int(math.ceil((stop - start) / sample_step_ns)) + 1
     n_samples = max(n_samples, 2)
 
@@ -243,20 +220,9 @@ def _build_reconstructed_waveform(
             impulse[i1] += amp * frac
 
     time = [start + i * sample_step_ns + float(transit_time_ns) for i in range(n_samples)]
-    tau_ns = float(gamma_tau_ns) if gamma_tau_ns is not None else _gamma_tau_from_rise(response_rise_ns, gamma_shape)
-    kernel_samples = int(math.ceil(12.0 * response_fwhm_ns / sample_step_ns)) + 1
-    kernel = [0.0] * kernel_samples
-    for k in range(1, kernel_samples):
-        x = (float(k) * sample_step_ns) / tau_ns
-        kernel[k] = float((x / gamma_shape) ** gamma_shape * math.exp(gamma_shape - x)) if x > 0.0 else 0.0
+    kernel_samples = len(kernel)
 
-    voltage = [0.0] * n_samples
-    for i, amp in enumerate(impulse):
-        if amp <= 0.0:
-            continue
-        available = min(kernel_samples, n_samples - i)
-        for k in range(1, available):
-            voltage[i + k] += amp * kernel[k]
+    voltage = convolve_impulses(impulse, kernel)
     return time, voltage
 
 
@@ -273,6 +239,7 @@ def _collect_toa(
     transit_time_ns: float,
     gamma_shape: float,
     gamma_tau_ns: Optional[float],
+    kernel_tail_level: float = 1e-10,
 ):
     import ROOT
 
@@ -302,15 +269,13 @@ def _collect_toa(
         "t1_no_toa": 0,
         "t1_bad_r2": 0,
         "t1_r2": [],
-        "t1_chi2ndf": [],
-        "t1_pvalue": [],
+        "t1_residual_per_dof": [],
         "t2_linear": 0,
         "t2_fallback": 0,
         "t2_no_toa": 0,
         "t2_bad_r2": 0,
         "t2_r2": [],
-        "t2_chi2ndf": [],
-        "t2_pvalue": [],
+        "t2_residual_per_dof": [],
     }
 
     for i in range(nmax):
@@ -326,6 +291,7 @@ def _collect_toa(
             response_fwhm_ns=response_fwhm_ns,
             gamma_shape=gamma_shape,
             gamma_tau_ns=gamma_tau_ns,
+            kernel_tail_level=kernel_tail_level,
             transit_time_ns=transit_time_ns,
         )
         wx2, wy2 = _build_reconstructed_waveform(
@@ -337,6 +303,7 @@ def _collect_toa(
             response_fwhm_ns=response_fwhm_ns,
             gamma_shape=gamma_shape,
             gamma_tau_ns=gamma_tau_ns,
+            kernel_tail_level=kernel_tail_level,
             transit_time_ns=transit_time_ns,
         )
 
@@ -358,13 +325,10 @@ def _collect_toa(
                 fit_stats[f"{prefix}_r2"].append(rr)
                 if rr < fit_r2_min:
                     fit_stats[f"{prefix}_bad_r2"] += 1
-            chi2 = meta.get("chi2", None)
-            ndf = int(meta.get("ndf", 0) or 0)
+            chi2 = meta.get("weighted_residual", None)
+            ndf = int(meta.get("residual_dof", 0) or 0)
             if chi2 is not None and ndf > 0:
-                fit_stats[f"{prefix}_chi2ndf"].append(float(chi2) / float(ndf))
-            pval = meta.get("pvalue", None)
-            if pval is not None:
-                fit_stats[f"{prefix}_pvalue"].append(float(pval))
+                fit_stats[f"{prefix}_residual_per_dof"].append(float(chi2) / float(ndf))
 
         if v1 is not None:
             t1_vals.append(v1)
@@ -406,16 +370,11 @@ def _format_fit_quality(fit_stats: dict[str, Any], fit_r2_min: float) -> str:
             lines.append(
                 f"        R^2: mean={mean_r2:.4f}, p05={p05:.4f}, p50={p50:.4f}, p95={p95:.4f}, below_thr={bad_r2}"
             )
-            chi2ndf_vals = [float(v) for v in fit_stats[f"{trig}_chi2ndf"]]
-            pval_vals = [float(v) for v in fit_stats[f"{trig}_pvalue"]]
+            chi2ndf_vals = [float(v) for v in fit_stats[f"{trig}_residual_per_dof"]]
             if chi2ndf_vals:
                 c50 = _percentile(chi2ndf_vals, 0.50)
                 c95 = _percentile(chi2ndf_vals, 0.95)
-                lines.append(f"        chi2/ndf: p50={c50:.4f}, p95={c95:.4f}")
-            if pval_vals:
-                p50v = _percentile(pval_vals, 0.50)
-                p05v = _percentile(pval_vals, 0.05)
-                lines.append(f"        p-value: p50={p50v:.4f}, p05={p05v:.4f}")
+                lines.append(f"        weighted residual/dof (descriptive): p50={c50:.4f}, p95={c95:.4f}")
         else:
             lines.append("        R^2: n/a (local-linear fit not used)")
     return "\n".join(lines)
@@ -536,17 +495,18 @@ def main() -> None:
     parser.add_argument(
         "--sample-step-ns",
         type=float,
-        default=0.05,
+        default=0.01,
         help="waveform 샘플 간격(ns). 작게 줄수록 파형이 더 부드러워짐",
     )
-    parser.add_argument("--gamma-shape", type=float, default=1.915604733026, help="gamma pulse shape")
+    parser.add_argument("--gamma-shape", type=float, default=1.915604733026, help="two-sided gamma shape [0.1, 100]; independent rise/fall time scales")
     parser.add_argument(
         "--gamma-tau-ns",
         type=float,
         default=None,
-        help="gamma pulse tau(ns), 미지정시 rise+shape로 자동 보정",
+        help="상승 tau(ns) 호환 검사용: rise+shape와 일치해야 함; 보통 생략",
     )
     parser.add_argument("-l", "--rootio-lib", default=None)
+    parser.add_argument("--kernel-tail-level", type=float, default=1e-10, help="SPE tail/peak cutoff, independent of FWHM (default 1e-10)")
     args = parser.parse_args()
 
     if not (0.0 < args.peak_frac < 1.0):
@@ -589,6 +549,8 @@ def main() -> None:
     spec_rise_ns, spec_transit_ns = _load_r2076_time_response(spec_csv_path)
     response_rise_ns = float(args.response_rise_ns) if args.response_rise_ns is not None else float(spec_rise_ns if spec_rise_ns is not None else 1.0)
     response_fwhm_ns = float(args.response_fwhm_ns) if args.response_fwhm_ns is not None else 3.0
+    response = resolve_response(response_rise_ns, response_fwhm_ns, args.gamma_shape, args.gamma_tau_ns, args.kernel_tail_level)
+    print(f"[SPE two-sided-gamma-v1] rise_tau={response.rise_tau_ns:.9g} ns, fall_tau={response.fall_tau_ns:.9g} ns, duration={response.duration_ns:.9g} ns, tail_level={args.kernel_tail_level:g}; peak-normalized ideal response")
     transit_time_ns = float(args.transit_time_ns) if args.transit_time_ns is not None else float(spec_transit_ns if spec_transit_ns is not None else 0.0)
 
     _load_rootio(args.rootio_lib, repo_root)
@@ -609,6 +571,7 @@ def main() -> None:
         transit_time_ns=transit_time_ns,
         gamma_shape=args.gamma_shape,
         gamma_tau_ns=args.gamma_tau_ns,
+        kernel_tail_level=args.kernel_tail_level,
     )
 
     plot_bin_ns = args.plot_bin_ps / 1000.0
@@ -666,7 +629,7 @@ def main() -> None:
         f"  T2: filled={len(t2_vals)}, skipped={sk2}\n"
         f"  T1-T2: filled={len(dt_vals)}, skipped={skd}\n"
         f"  TOA 정의: waveform reconstruction + local-linear rising edge at {args.peak_frac:g} * peak\n"
-        f"  waveform: dt={args.sample_step_ns:.3f} ns, rise={response_rise_ns:.3f} ns, fwhm={response_fwhm_ns:.3f} ns, transit={transit_time_ns:.3f} ns, shape={args.gamma_shape:.6f}, tau={float(args.gamma_tau_ns) if args.gamma_tau_ns is not None else _gamma_tau_from_rise(response_rise_ns, args.gamma_shape):.6f} ns\n"
+        f"  waveform: dt={args.sample_step_ns:.3f} ns, rise={response_rise_ns:.3f} ns, fwhm={response_fwhm_ns:.3f} ns, transit={transit_time_ns:.3f} ns, shape={args.gamma_shape:.6f}, rise_tau={float(args.gamma_tau_ns) if args.gamma_tau_ns is not None else _gamma_tau_from_rise(response_rise_ns, args.gamma_shape):.6f} ns\n"
         f"PNG 저장: {out}\n"
         f"{_format_fit_quality(fit_stats, args.fit_r2_min)}"
     )

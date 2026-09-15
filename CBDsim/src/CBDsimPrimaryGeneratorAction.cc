@@ -41,6 +41,8 @@ CBDsimPrimaryGeneratorAction::CBDsimPrimaryGeneratorAction(G4int seed)
   fZ_0 = 0.*cm;
 
   fParticleGun = new G4ParticleGun(fNumPtc);
+  fParticleGun->SetParticlePosition(G4ThreeVector());
+  fParticleGun->SetParticleMomentumDirection(G4ThreeVector(0,0,1));
 
   G4ParticleTable* ptcTable = G4ParticleTable::GetParticleTable();
   G4String ptcName;
@@ -57,25 +59,21 @@ CBDsimPrimaryGeneratorAction::CBDsimPrimaryGeneratorAction(G4int seed)
 
 CBDsimPrimaryGeneratorAction::~CBDsimPrimaryGeneratorAction() {
   if (fMessenger) delete fMessenger;
+  delete fParticleGun;
 }
 
 void CBDsimPrimaryGeneratorAction::GeneratePrimaries(G4Event* evt) {
-  fY = (G4UniformRand()-0.5)*fRandX + fY_0;
-  fZ = (G4UniformRand()-0.5)*fRandY + fZ_0;
-  fOrigin.set(0.,fY,fZ);
-
+  // /gun owns the nominal position and direction. Optional spreads use world x/y.
+  const auto nominal = fParticleGun->GetParticlePosition();
+  const auto offsetX = (G4UniformRand()-0.5)*fRandX;
+  const auto offsetY = (G4UniformRand()-0.5)*fRandY;
+  fOrigin = nominal + G4ThreeVector(offsetX, offsetY, 0.);
+  fDirection = fParticleGun->GetParticleMomentumDirection();
   fParticleGun->SetParticlePosition(fOrigin);
-
-  // Base +z (Proto trigger thin axis, typical /gun/direction 0 0 1). For legacy +x use
-  // /CBDsim/generator/theta 1.570796327 rad (rotateY: +z -> +x).
-  fDirection.set(0., 0., 1.);
-  fDirection.rotateY(fTheta);
-  fDirection.rotateZ(fPhi);
-
-  fParticleGun->SetParticleMomentumDirection(fDirection);
 
   G4AutoLock lock(&CBDsimPrimaryGeneratorActionMutex);
   fParticleGun->GeneratePrimaryVertex(evt);
+  fParticleGun->SetParticlePosition(nominal); // avoid accumulating random offsets
   sLastPrimaryEkin = fParticleGun->GetParticleEnergy();
   sLastPrimaryVx = fOrigin.x() / mm;
   sLastPrimaryVy = fOrigin.y() / mm;
@@ -111,11 +109,23 @@ void CBDsimPrimaryGeneratorAction::DefineCommands() {
   z0Cmd.SetParameterName("z0",true);
   z0Cmd.SetDefaultValue("0.");
 
-  G4GenericMessenger::Command& randxCmd = fMessenger->DeclareMethodWithUnit("randx","mm",&CBDsimPrimaryGeneratorAction::SetRandX,"x width of beam");
+  G4GenericMessenger::Command& randxCmd = fMessenger->DeclareMethodWithUnit("randx","mm",&CBDsimPrimaryGeneratorAction::SetRandX,"world x full uniform width (legacy name randx)");
   randxCmd.SetParameterName("randx",true);
   randxCmd.SetDefaultValue("10.");
 
-  G4GenericMessenger::Command& randyCmd = fMessenger->DeclareMethodWithUnit("randy","mm",&CBDsimPrimaryGeneratorAction::SetRandY,"y width of beam");
+  G4GenericMessenger::Command& randyCmd = fMessenger->DeclareMethodWithUnit("randy","mm",&CBDsimPrimaryGeneratorAction::SetRandY,"world y full uniform width (legacy name randy)");
   randyCmd.SetParameterName("randy",true);
   randyCmd.SetDefaultValue("10.");
+}
+
+void CBDsimPrimaryGeneratorAction::SetTheta(G4double theta) {
+  fTheta=theta; G4ThreeVector d(0,0,1);d.rotateY(fTheta);d.rotateZ(fPhi);
+  fParticleGun->SetParticleMomentumDirection(d);
+}
+void CBDsimPrimaryGeneratorAction::SetPhi(G4double phi) {fPhi=phi;SetTheta(fTheta);}
+void CBDsimPrimaryGeneratorAction::SetY0(G4double y) {
+  auto p=fParticleGun->GetParticlePosition();p.setY(y);fParticleGun->SetParticlePosition(p);
+}
+void CBDsimPrimaryGeneratorAction::SetZ0(G4double z) {
+  auto p=fParticleGun->GetParticlePosition();p.setZ(z);fParticleGun->SetParticlePosition(p);
 }

@@ -8,6 +8,7 @@ public:
   CBDsimTrackingAction();
   virtual ~CBDsimTrackingAction();
 
+  virtual void PreUserTrackingAction(const G4Track* track) override;
   virtual void PostUserTrackingAction(const G4Track* track) override;
 };
 

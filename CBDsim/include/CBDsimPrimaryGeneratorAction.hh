@@ -16,13 +16,13 @@ public:
 
   virtual void GeneratePrimaries(G4Event*);
 
-  void SetTheta(G4double theta) { fTheta = theta; }
+  void SetTheta(G4double theta);
   G4double GetTheta() const { return fTheta; }
 
-  void SetPhi(G4double phi) { fPhi = phi; }
+  void SetPhi(G4double phi);
 
-  void SetY0(G4double y0) { fY_0 = y0; }
-  void SetZ0(G4double z0) { fZ_0 = z0; }
+  void SetY0(G4double y0);
+  void SetZ0(G4double z0);
 
   void SetRandX(G4double randx) { fRandX = randx; }
   void SetRandY(G4double randy) { fRandY = randy; }
