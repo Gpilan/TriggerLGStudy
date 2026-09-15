@@ -16,7 +16,10 @@
 #include "G4TriangularFacet.hh"
 #include "G4SubtractionSolid.hh"
 #include "G4Tubs.hh"
+#include "G4UnionSolid.hh"
 #include "G4NistManager.hh"
+#include "G4OpticalSurface.hh"
+#include "G4MaterialPropertiesTable.hh"
 #include "G4SDManager.hh"
 #include "G4Exception.hh"
 
@@ -87,7 +90,7 @@ void rectBoundaryXZ(G4double phi, G4double hx, G4double hz, G4double& px, G4doub
   pz = scale * s;
 }
 
-G4TessellatedSolid* BuildLightGuideTessellated() {
+G4TessellatedSolid* BuildLightGuideTessellated(G4double endInset = 0., G4double endRadius = kRguide) {
   auto* ts = new G4TessellatedSolid("ProtoLightGuide");
 
   // Uniform azimuths alone cut off the rectangular inlet corners. Include the four
@@ -106,13 +109,13 @@ G4TessellatedSolid* BuildLightGuideTessellated() {
 
   for (G4int i = 0; i < nRings; ++i) {
     const G4double t = static_cast<G4double>(i) / static_cast<G4double>(kNSlice);
-    const G4double y = -kHyLong - kLGZGap - t * kLguide;
+    const G4double y = -kHyLong - kLGZGap - t * (kLguide-endInset);
     for (G4int j = 0; j < nPhi; ++j) {
       const G4double phi = angles[j];
       G4double rx, rz;
       rectBoundaryXZ(phi, kHxWide, kHzThin, rx, rz);
-      const G4double cx = kRguide * std::cos(phi);
-      const G4double cz = kRguide * std::sin(phi);
+      const G4double cx = endRadius * std::cos(phi);
+      const G4double cz = endRadius * std::sin(phi);
       const G4double px = (1.0 - t) * rx + t * cx;
       const G4double pz = (1.0 - t) * rz + t * cz;
       v.emplace_back(px, y, pz);
@@ -140,7 +143,7 @@ G4TessellatedSolid* BuildLightGuideTessellated() {
     ts->AddFacet(new G4TriangularFacet(cbot, v[idx(0, jp)], v[idx(0, j)], ABSOLUTE));
   }
 
-  const G4ThreeVector ctop(0.0, -kHyLong - kLGZGap - kLguide, 0.0);
+  const G4ThreeVector ctop(0.0, -kHyLong - kLGZGap - kLguide + endInset, 0.0);
   for (G4int j = 0; j < nPhi; ++j) {
     const G4int jp = (j + 1) % nPhi;
     ts->AddFacet(new G4TriangularFacet(ctop, v[idx(kNSlice, j)], v[idx(kNSlice, jp)], ABSOLUTE));
@@ -267,7 +270,21 @@ G4VPhysicalVolume* CBDsimDetectorConstructionProto::Construct() {
   G4PVPlacement* lgPV1 = nullptr;
   G4PVPlacement* lgPV2 = nullptr;
   if (withLG) {
-    G4TessellatedSolid* lgSolid = BuildLightGuideTessellated();
+    const char* roundSetting = std::getenv("CBDsim_PROTO_ROUND_TIP");
+    if (roundSetting && G4String(roundSetting)!="0" && G4String(roundSetting)!="1")
+      G4Exception("CBDsimDetectorConstructionProto::Construct", "InvalidRoundTip", FatalException,
+                  "CBDsim_PROTO_ROUND_TIP must be 0 or 1.");
+    const bool roundTip = !roundSetting || G4String(roundSetting)=="1";
+    G4VSolid* lgSolid = BuildLightGuideTessellated(roundTip ? 0.1*mm : 0., roundTip ? kRguide-0.001*mm : kRguide);
+    if (roundTip) {
+      // Trial: 0.2 mm cylinder, 0.1 mm positive Boolean overlap; total LG remains 30 mm.
+      auto* cylinder = new G4Tubs("ProtoRoundTip",0.,kRguide,0.1*mm,0.,twopi);
+      G4RotationMatrix rotation; rotation.rotateX(-halfpi);
+      lgSolid = new G4UnionSolid("ProtoLightGuideRoundTip",lgSolid,cylinder,
+          G4Transform3D(rotation,G4ThreeVector(0.,-kHyLong-kLGZGap-kLguide+0.1*mm,0.)));
+    }
+    G4cout << "[Proto round tip] active=" << roundTip << " total_length_mm=" << kLguide/mm
+           << " cylinder_length_mm=" << (roundTip ? 0.2 : 0.) << " boolean_overlap_mm=" << (roundTip ? 0.1 : 0.) << G4endl;
     auto* lgLog =
         new G4LogicalVolume(lgSolid, FindMaterial("ProtoLG_MatchScint"), "protoLightGuideLog");
     lgPV1 = new G4PVPlacement(trWorld1(G4Transform3D()), lgLog, "protoLightGuidePhys", worldLog, false, 0);
@@ -292,6 +309,49 @@ G4VPhysicalVolume* CBDsimDetectorConstructionProto::Construct() {
   const G4double yGelCenter = yCouplingFace - gelHalfY;
   const G4double yWindowCenter = yGelCenter - gelHalfY - windowHalfY;
   const G4double yWaferCenter = yWindowCenter - windowHalfY - waferHalfY;
+
+  // Absorbing sleeves: no-LG gel + window sides, LG inlet gel sides.
+  // Extensions can be disabled to reproduce the previous gel-only model.
+  // 50 um thickness, direct contact, R=T=0 are explicit idealizations, not measured tape data.
+  const char* tapeSetting = std::getenv("CBDsim_PROTO_GEL_TAPE");
+  if (tapeSetting && G4String(tapeSetting) != "0" && G4String(tapeSetting) != "1")
+    G4Exception("CBDsimDetectorConstructionProto::Construct", "InvalidGelTape", FatalException,
+                "CBDsim_PROTO_GEL_TAPE must be 0 (legacy) or 1 (absorbing tape sleeve).");
+  const char* extensionSetting = std::getenv("CBDsim_PROTO_TAPE_EXTENSIONS");
+  if (extensionSetting && G4String(extensionSetting)!="0" && G4String(extensionSetting)!="1")
+    G4Exception("CBDsimDetectorConstructionProto::Construct", "InvalidTapeExtensions", FatalException,
+                "CBDsim_PROTO_TAPE_EXTENSIONS must be 0 or 1.");
+  const bool tapeExtensions = !extensionSetting || G4String(extensionSetting)=="1";
+  const bool gelTape = (!withLG || tapeExtensions) && (!tapeSetting || G4String(tapeSetting) == "1");
+  const G4double tapeHalfY = withLG ? kScintLGGelT*0.5 : gelHalfY + (tapeExtensions ? windowHalfY : 0.);
+  const G4double tapeCenterY = yScintFace - tapeHalfY;
+  const G4double tapeHalfX = withLG ? kHxWide : kSipmRectHalfX;
+  const G4double tapeHalfZ = withLG ? kHzThin : kSipmRectHalfZ;
+  const G4double tapeT = 0.05*mm;
+  G4SubtractionSolid* gelTapeSolid = nullptr;
+  if (gelTape) {
+    auto* outer = new G4Box("protoGelTapeOuter", tapeHalfX+tapeT, tapeHalfY, tapeHalfZ+tapeT);
+    auto* aperture = new G4Box("protoGelTapeAperture", tapeHalfX, tapeHalfY+1.*mm, tapeHalfZ);
+    gelTapeSolid = new G4SubtractionSolid("protoGelTape", outer, aperture);
+    auto* tapeLog = new G4LogicalVolume(gelTapeSolid,
+        G4NistManager::Instance()->FindOrBuildMaterial("G4_POLYVINYL_CHLORIDE"), "protoGelTapeLog");
+    auto* surface = new G4OpticalSurface("protoGelTapeAbsorber", unified, polished, dielectric_metal);
+    auto* properties = new G4MaterialPropertiesTable;
+    G4double energies[] = {1.*eV, 10.*eV};
+    G4double zero[] = {0., 0.};
+    properties->AddProperty("REFLECTIVITY", energies, zero, 2);
+    properties->AddProperty("TRANSMITTANCE", energies, zero, 2);
+    properties->AddProperty("EFFICIENCY", energies, zero, 2);
+    surface->SetMaterialPropertiesTable(properties);
+    new G4LogicalSkinSurface("protoGelTapeAbsorberSkin", tapeLog, surface);
+    const G4Transform3D localTape(G4RotationMatrix(), G4ThreeVector(0., tapeCenterY, 0.));
+    new G4PVPlacement(trWorld1(localTape), tapeLog, "protoGelTapePhys", worldLog, false, 0);
+    new G4PVPlacement(trWorld2(localTape), tapeLog, "protoGelTapePhys", worldLog, false, 1);
+    tapeLog->SetVisAttributes(fVisFoil);
+  }
+  G4cout << "[Proto gel tape] active=" << gelTape << " extensions=" << tapeExtensions
+         << " scope=" << (withLG ? "LG_inlet_gel" : (tapeExtensions ? "noLG_gel_and_window" : "noLG_gel_only"))
+         << " thickness_mm=" << tapeT/mm << " direct_contact=1 R=0 T=0 efficiency=0" << G4endl;
 
   G4cout << "[Proto geometry] coupling face y=" << yCouplingFace / mm << " mm, gel center y="
          << yGelCenter / mm << " mm (gel top y=" << (yGelCenter + gelHalfY) / mm << " mm, overlap "
@@ -382,6 +442,10 @@ G4VPhysicalVolume* CBDsimDetectorConstructionProto::Construct() {
       new G4Box("protoFoilBottomCut", xo + 1.e-3 * mm, kFoilT + 1.e-3 * mm, zo + 1.e-3 * mm);
   auto* foilWrapS = new G4SubtractionSolid("protoFoilWrap", foilShellS, foilBottomCutS, nullptr,
                                            G4ThreeVector(0., -yo + ft2, 0.));
+  // Tape occupies this small part of the former foil lip: subtract it rather than overlap.
+  if (gelTapeSolid)
+    foilWrapS = new G4SubtractionSolid("protoFoilWrapTapeCut", foilWrapS, gelTapeSolid, nullptr,
+                                     G4ThreeVector(0., tapeCenterY, 0.));
   auto* foilWrapLog = new G4LogicalVolume(foilWrapS, FindMaterial("Aluminum"), "protoFoilWrapLog");
   foilWrapLog->SetVisAttributes(fVisFoil);
   new G4LogicalSkinSurface("protoAlSurfWrap", foilWrapLog, FindSurface("AluminumSurf"));
@@ -390,8 +454,16 @@ G4VPhysicalVolume* CBDsimDetectorConstructionProto::Construct() {
   // the inlet grease/LG volume (and duplicated the no-LG foil strips).
 
   // LG tip annulus (LG mode only): blocks radial leak at outlet.
-  const G4double tipRingInnerR =
-      kRguide + kAirGap;
+  // Independent sensor radial clearance: contact is the default optical model after validation.
+  // Do not change the scintillator foil air gap.
+  const char* contactSetting = std::getenv("CBDsim_PROTO_TIP_CONTACT");
+  if (contactSetting && G4String(contactSetting)!="0" && G4String(contactSetting)!="1")
+    G4Exception("CBDsimDetectorConstructionProto::Construct", "InvalidTipContact", FatalException,
+                "CBDsim_PROTO_TIP_CONTACT must be 0 or 1.");
+  const bool tipContact = !contactSetting || G4String(contactSetting)=="1";
+  const G4double tipRingInnerR = kRguide + (tipContact ? 0. : kAirGap);
+  G4cout << "[Proto tip contact] active=" << (withLG && tipContact)
+         << " radial_clearance_mm=" << (tipRingInnerR-kRguide)/mm << G4endl;
   const G4double tipRingOuterR = kRguide + kAirGap + kFoilT + kTipRingOuterExtra;
   const G4double yTipRing = yCouplingFace - kTipRingHalfY;
   auto* tipRingS =
@@ -404,20 +476,61 @@ G4VPhysicalVolume* CBDsimDetectorConstructionProto::Construct() {
   tipRingRot.rotateX(-halfpi);
 
   // no-LG: Al strips on scint -y face beside rectangular SiPM (v3 idea, v5 Al surface).
+  G4VSolid* foilYmStripSolid = nullptr;
   G4LogicalVolume* foilYmStripLog = nullptr;
   G4double xLeftYm = 0.;
   G4double xRightYm = 0.;
   if (!withLG) {
-    const G4double foilYmStripHalfX = 0.5 * (kHxWide - kSipmRectHalfX);
+    const G4double stripInnerX = kSipmRectHalfX + (gelTape ? tapeT : 0.);
+    const G4double foilYmStripHalfX = 0.5 * (kHxWide - stripInnerX);
     auto* foilYmStripS =
         new G4Box("protoFoilYmStrip", foilYmStripHalfX, ft2, zi);
+    foilYmStripSolid = foilYmStripS;
     foilYmStripLog =
         new G4LogicalVolume(foilYmStripS, FindMaterial("Aluminum"), "protoFoilYmStripLog");
     foilYmStripLog->SetVisAttributes(fVisFoil);
     new G4LogicalSkinSurface("protoAlSurfYmStrip", foilYmStripLog, FindSurface("AluminumSurf"));
-    xLeftYm = -0.5 * (kHxWide + kSipmRectHalfX);
-    xRightYm = 0.5 * (kHxWide + kSipmRectHalfX);
+    xLeftYm = -0.5 * (kHxWide + stripInnerX);
+    xRightYm = 0.5 * (kHxWide + stripInnerX);
   }
+
+  // Folded Al rim closes only the open tile/foil air-gap perimeter.
+  // In LG mode it stops exactly at the scint face: no reflector is added to inlet gel sides.
+  const char* sealSetting = std::getenv("CBDsim_PROTO_CORNER_SEAL");
+  if (sealSetting && G4String(sealSetting)!="0" && G4String(sealSetting)!="1")
+    G4Exception("CBDsimDetectorConstructionProto::Construct", "InvalidCornerSeal", FatalException,
+                "CBDsim_PROTO_CORNER_SEAL must be 0 or 1.");
+  const bool cornerSeal = !sealSetting || G4String(sealSetting)=="1";
+  if (cornerSeal) {
+    const G4double sealTop = -kHyLong + 0.02*mm;
+    const G4double sealBottom = withLG ? -kHyLong : -yo;
+    const G4double sealY = 0.5*(sealTop+sealBottom);
+    const G4double sealHalfY = 0.5*(sealTop-sealBottom);
+    auto* rimOuter = new G4Box("protoCornerSealOuter", xo, sealHalfY, zo);
+    auto* rimAperture = new G4Box("protoCornerSealAperture", kHxWide, sealHalfY+1.*mm, kHzThin);
+    G4VSolid* rim = new G4SubtractionSolid("protoCornerSealRing", rimOuter, rimAperture);
+    // Existing volumes keep their ownership; the new rim fills only the missing material.
+    rim = new G4SubtractionSolid("protoCornerSealWrapCut", rim, foilWrapS, nullptr,
+                                G4ThreeVector(0.,-sealY,0.));
+    if (gelTapeSolid)
+      rim = new G4SubtractionSolid("protoCornerSealTapeCut", rim, gelTapeSolid, nullptr,
+                                  G4ThreeVector(0.,tapeCenterY-sealY,0.));
+    if (foilYmStripSolid) {
+      const G4double foilY = -kHyLong-kAirGap-ft2;
+      rim = new G4SubtractionSolid("protoCornerSealLeftCut", rim, foilYmStripSolid, nullptr,
+                                  G4ThreeVector(xLeftYm,foilY-sealY,0.));
+      rim = new G4SubtractionSolid("protoCornerSealRightCut", rim, foilYmStripSolid, nullptr,
+                                  G4ThreeVector(xRightYm,foilY-sealY,0.));
+    }
+    auto* rimLog = new G4LogicalVolume(rim, FindMaterial("Aluminum"), "protoFoilCornerSealLog");
+    new G4LogicalSkinSurface("protoAlSurfCornerSeal", rimLog, FindSurface("AluminumSurf"));
+    const G4Transform3D localRim(G4RotationMatrix(),G4ThreeVector(0.,sealY,0.));
+    new G4PVPlacement(trWorld1(localRim),rimLog,"protoFoilCornerSealPhys",worldLog,false,0);
+    new G4PVPlacement(trWorld2(localRim),rimLog,"protoFoilCornerSealPhys",worldLog,false,1);
+    rimLog->SetVisAttributes(fVisFoil);
+  }
+  G4cout << "[Proto corner seal] active=" << cornerSeal
+         << " surface=AluminumSurf scope=tile_foil_perimeter" << G4endl;
 
   {
     const G4Transform3D localGel(G4Transform3D(sipmRot, G4ThreeVector(0., yGelCenter, 0.)));

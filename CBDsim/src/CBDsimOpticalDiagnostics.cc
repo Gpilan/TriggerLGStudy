@@ -14,6 +14,12 @@
 #include "G4Track.hh"
 #include "G4VProcess.hh"
 
+#ifdef CBDsim_PRECISION_TRACE
+#include "G4TouchableHistory.hh"
+#include <iomanip>
+#include <memory>
+#endif
+
 #include <algorithm>
 #include <array>
 #include <cstdlib>
@@ -584,6 +590,9 @@ void WritePathHistToFile(const Counters& c, const G4String& path) {
     out << "\n";
   }
 }
+#ifdef CBDsim_PRECISION_TRACE
+#include "PrecisionTrace.inc"
+#endif
 }  // namespace
 
 bool CBDsimOpticalDiagnostics::Enabled() { return EnvEnabled(); }
@@ -612,11 +621,17 @@ void CBDsimOpticalDiagnostics::PreUserTrackingAction(const G4Track* track) {
   const auto* creator = track->GetCreatorProcess();
   t.source = t.parent == 0 ? "primary_optical" : creator ? creator->GetProcessName() : "unknown_creator";
   tracks.emplace(track->GetTrackID(), t);
+#ifdef CBDsim_PRECISION_TRACE
+  Precision().BeginTrack(track);
+#endif
 }
 
 void CBDsimOpticalDiagnostics::EndEvent(G4bool aborted) {
   if (!EnvEnabled() || Budget().id < 0) return;
   auto& c = Worker();
+#ifdef CBDsim_PRECISION_TRACE
+  Precision().EndEvent(aborted);
+#endif
   std::map<G4String, G4long> counts;
   counts["started"] = 0;
   counts["fate_unfinished"] = 0;
@@ -664,6 +679,9 @@ void CBDsimOpticalDiagnostics::ResetForRun() {
   Fates().clear();
   Steps().clear();
   WindowArrivals().clear();
+#ifdef CBDsim_PRECISION_TRACE
+  ResetPrecision();
+#endif
 }
 
 void CBDsimOpticalDiagnostics::MergeWorkerIntoMaster() {
@@ -681,6 +699,9 @@ void CBDsimOpticalDiagnostics::UserSteppingAction(const G4Step* step) {
   if (!EnvEnabled()) return;
   if (step->GetTrack()->GetDefinition() != G4OpticalPhoton::OpticalPhotonDefinition()) return;
 
+  #ifdef CBDsim_PRECISION_TRACE
+  Precision().Step(step);
+  #endif
   auto& c = Worker();
   const G4double mm = step->GetStepLength() / CLHEP::mm;
   G4String preVol = "none";

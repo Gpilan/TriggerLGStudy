@@ -6,13 +6,14 @@ Geant4 simulation and ROOT/Python analysis of optical photon collection and timi
 
 - [Simulation](CBDsim/) and [geometry validation](CBDsim/tests/proto_geometry/README.md)
 - [Frozen build and run workflow](scripts/README-frozen-baseline.md): explicit LG/noLG mode, seeds, beam settings, source and binary hashes
+- [Precision photon tracing](CBDsim/precision/README.md): shared physics, optional full journeys and terminal records
 - [Optical diagnostics](CBDsim/tests/optical_boundary/README.md) and [sensor response assumptions](CBDsim/tests/sensor_response/README.md)
 - [SPE waveform model](analysis/README-spe-response.md) and [analysis code](analysis/)
 - [Version management](docs/VERSIONING.md) and [historical snapshot index](docs/SNAPSHOTS.md)
 
 On the KNU environment, load the existing CERN LCG view with `source envset.sh`. This setup depends on CVMFS; it is not a portable dependency installer. Use the frozen workflow to build and run in new output directories without replacing a shared executable.
 
-[2026-09-15 technical baseline validation](docs/BASELINE-2026-09-15.md).
+[Current: 2026-09-16 optical-closure baseline](docs/BASELINE-2026-09-16.md) · [Previous baseline](docs/BASELINE-2026-09-15.md).
 
 ## Versions and run conditions
 

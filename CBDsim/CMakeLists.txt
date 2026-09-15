@@ -104,3 +104,9 @@ configure_file(
 # Install the executable to 'bin' directory under CMAKE_INSTALL_PREFIX
 #
 install(TARGETS CBDsim DESTINATION bin)
+
+# Explicit opt-in target: production CBDsim contains no precision logging hooks.
+option(CBDsim_BUILD_PRECISION "Enable separate photon precision diagnostic target" OFF)
+if(CBDsim_BUILD_PRECISION)
+  add_subdirectory(precision)
+endif()

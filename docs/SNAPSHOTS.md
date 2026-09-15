@@ -19,3 +19,11 @@ These tags preserve the exact tips of the 13 retired version branches. They reta
 | `version/2026-07-16-trigger-v5` | [snapshot/2026-07-16-trigger-v5](https://github.com/Gpilan/TriggerLGStudy/tree/snapshot/2026-07-16-trigger-v5) | `7a168a85f43e3469b3c2ec50843b5719ed96e326` |
 
 The LG-v1 and noLG-v1 snapshot tips contain one commit each absent from the v5 lineage (`8849e7c` and `1df6cd6`). They are preserved without merging their historical changes into the integrated model. The two v3 tags point to the same commit; their names alone are not evidence of distinct simulation configurations.
+
+## Integrated main checkpoints
+
+| Snapshot tag | Commit | Scope |
+|---|---|---|
+| `snapshot/main-before-2026-09-16` | `70bd5dc1ab677011963b8ce780f0dd4c3aa02a41` | Integrated main before optical closure, precision tracing and round-outlet promotion; also retained as `baseline/2026-09-15`. |
+
+`baseline/2026-09-16` records the next integrated baseline; see its [validation scope](BASELINE-2026-09-16.md). Existing historical tags are not moved.

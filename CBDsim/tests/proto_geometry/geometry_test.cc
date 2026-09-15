@@ -6,6 +6,7 @@
 #include "G4GeometryManager.hh"
 #include "G4GeometryTolerance.hh"
 #include "G4TessellatedSolid.hh"
+#include "G4Polyhedron.hh"
 #include "G4PhysicalConstants.hh"
 #include <iomanip>
 #include "G4VUserPhysicsList.hh"
@@ -119,6 +120,42 @@ int main(int argc,char** argv) {
         if(!pv || pv->GetName()!=expected) {++bad;std::cout<<"BAD_POINT local="<<local<<" expected="<<expected<<" got="<<(pv?pv->GetName():"none")<<std::endl;}
       };
       for(double eps : {1.e-6*mm,1.e-5*mm,1.e-4*mm}) {
+        const char* ext = std::getenv("CBDsim_PROTO_TAPE_EXTENSIONS");
+        const char* tapeOpt = std::getenv("CBDsim_PROTO_GEL_TAPE");
+        const bool extendedTape = (!ext || std::string(ext)=="1") && (!tapeOpt || std::string(tapeOpt)=="1");
+        if (extendedTape) {
+          const double hx=noLG?7.5:20.;
+          const double cy=noLG?-30.25:-30.01;
+          for (int sign : {-1,1}) {
+            check({sign*(hx+eps)*mm,cy*mm,0.},"protoGelTapePhys");
+            check({0.,cy*mm,sign*(2.5*mm+eps)},"protoGelTapePhys");
+            check({sign*(hx+eps)*mm,cy*mm,sign*(2.5*mm+eps)},"protoGelTapePhys");
+            check({sign*(hx-eps)*mm,cy*mm,0.},noLG?"protoSipmWindowPhys":"protoScintLGGelPhys");
+            check({sign*(hx+.05)*mm+sign*eps,cy*mm,0.},"protoWorldPhys");
+          }
+        }
+        const char* seal = std::getenv("CBDsim_PROTO_CORNER_SEAL");
+        if (!seal || std::string(seal)=="1") {
+          for (int sign : {-1,1}) {
+            check({sign*(20.*mm+eps),-29.99*mm,0.},"protoFoilCornerSealPhys");
+            check({0.,-29.99*mm,sign*(2.5*mm+eps)},"protoFoilCornerSealPhys");
+            if (!noLG) check({0.,-30.01*mm,sign*(2.5*mm+eps)},extendedTape?"protoGelTapePhys":"protoWorldPhys");
+          }
+        }
+        const char* tape = std::getenv("CBDsim_PROTO_GEL_TAPE");
+        if (noLG && (!tape || std::string(tape)=="1")) {
+          for (int sign : {-1,1}) {
+            check({sign*(7.5*mm-eps),-30.05*mm,0.},"protoSipmGelPhys");
+            check({sign*(7.5*mm+eps),-30.05*mm,0.},"protoGelTapePhys");
+            check({0.,-30.05*mm,sign*(2.5*mm+eps)},"protoGelTapePhys");
+            check({0.,-30.05*mm,sign*(2.55*mm+eps)},"protoWorldPhys");
+            // Former foil-strip overlap and the 1 um wrap lip are occupied by tape.
+            check({sign*(7.5*mm+eps),-30.02*mm,0.},"protoGelTapePhys");
+            check({sign*(7.55*mm+eps),-30.02*mm,0.},"protoFoilYmPhys");
+            check({0.,-30.0005*mm,sign*(2.52*mm)},"protoGelTapePhys");
+          }
+        }
+
         for(int ix=0;ix<10;++ix) for(int iz=0;iz<10;++iz) {
           const double x=(-1.+2.*ix/9.)*((noLG?7.5:20.)-0.001)*mm;
           const double z=(-1.+2.*iz/9.)*2.499*mm;
@@ -130,6 +167,18 @@ int main(int argc,char** argv) {
           }
         }
         const double tip=(noLG?-30.:-60.02)*mm;
+        if (!noLG) {
+          const char* contact = std::getenv("CBDsim_PROTO_TIP_CONTACT");
+          const bool touching = !contact || std::string(contact)=="1";
+          for (int j=0;j<32;++j) {
+            const double phi=twopi*j/32.;
+            for (double y : {-60.07,-60.25,-60.415}) {
+              const char* inside = y>-60.12 ? "protoSipmGelPhys" : (y>-60.41 ? "protoSipmWindowPhys" : "protoSipmWaferPhys");
+              check({(7.5*mm-eps)*std::cos(phi),y*mm,(7.5*mm-eps)*std::sin(phi)},inside);
+              check({(7.5*mm+eps)*std::cos(phi),y*mm,(7.5*mm+eps)*std::sin(phi)},touching?"protoFoilTipRingPhys":"protoWorldPhys");
+            }
+          }
+        }
         for(int j=0;j<100;++j) {
           const double phi=twopi*j/100.;
           const double x=noLG?7.499*std::cos(phi)*mm:7.49*std::cos(phi)*mm;
@@ -148,6 +197,24 @@ int main(int argc,char** argv) {
       for(auto* pv:*G4PhysicalVolumeStore::GetInstance()) {
         if(pv->GetName()!="protoLightGuidePhys" || pv->GetCopyNo()!=0) continue;
         auto* ts=dynamic_cast<G4TessellatedSolid*>(pv->GetLogicalVolume()->GetSolid());
+        if (!ts) {
+          const char* round=std::getenv("CBDsim_PROTO_ROUND_TIP");
+          ok &= !round || std::string(round)=="1";
+          auto* solid=pv->GetLogicalVolume()->GetSolid();
+          auto* poly=solid->GetPolyhedron();
+          ok &= poly && poly->GetNoFacets()>0;
+          std::cout<<"ROUND_TIP visual_facets="<<(poly?poly->GetNoFacets():0)<<std::endl;
+          for (int j=0;j<256;++j) {
+            double phi=twopi*(j+.5)/256.;
+            G4ThreeVector q(7.4998*mm*std::cos(phi),-60.019*mm,7.4998*mm*std::sin(phi));
+            ok &= solid->Inside(q)==kInside;
+            ok &= std::abs(solid->DistanceToOut(q,G4ThreeVector(0,-1,0))-.001*mm)<1.e-7*mm;
+          }
+          ok &= solid->Inside(G4ThreeVector(0,-60.021*mm,0))==kOutside;
+          ok &= solid->Inside(G4ThreeVector(0,-29.999*mm,0))==kOutside;
+          std::cout<<"ROUND_TIP outlet rays=256 total_length=30 pass="<<ok<<std::endl;
+          continue;
+        }
         double inletArea=0.,outletArea=0.,volume=0.,sag=0.;
         for(int j=0;j<ts->GetNumberOfFacets();++j) {
           const auto* f=ts->GetFacet(j);auto a=f->GetVertex(0),b=f->GetVertex(1),c=f->GetVertex(2);
