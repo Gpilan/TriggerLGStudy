@@ -44,3 +44,7 @@ B01 이후 `run`은 `--position-mm x y z`와 `--direction dx dy dz`를 지원합
 방향을 정규화하고 요청값을 macro/manifest에 남깁니다. ROOT schema는 float32이므로
 최신 validator는 그 저장 정밀도를 반영합니다. 이전 frozen bundle의 validator를
 자동 교체하지 않으므로 일반 기울기 실행에는 최신 소스로 새 bundle을 prepare하세요.
+
+## Signed position scan scope (September2026)
+
+`--scan-s-mm` accepts−29.5..29.5mm (negative toward the sensor), but the interval is an input bound, not a geometry validation. The completed ±25mm campaign used W10 tiles. Shared default W40 with LG at−25mm has inter-assembly overlaps; do not reuse W10 scan offsets at another width without geometry checks. See `docs/CHECKPOINT-2026-09-30.md`.

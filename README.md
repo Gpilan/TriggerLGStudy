@@ -4,6 +4,10 @@ Geant4 simulation and ROOT/Python analysis of optical photon collection and timi
 
 ## Start here
 
+- **[Completed scan results](analysis/results/scan_checkpoint_20260930/README.md)** · [September30 code checkpoint](docs/CHECKPOINT-2026-09-30.md)
+- Local workspace: `RESULTS.html` and `analysis/studies/` provide private, generated result navigation; they are not included in this checkout.
+- [Analysis tools and result update workflow](analysis/tools/README.md)
+
 - [Simulation](CBDsim/) and [geometry validation](CBDsim/tests/proto_geometry/README.md)
 - [Frozen build and run workflow](scripts/README-frozen-baseline.md): explicit LG/noLG mode, seeds, beam settings, source and binary hashes
 - [Precision photon tracing](CBDsim/precision/README.md): shared physics, optional full journeys and terminal records
@@ -13,7 +17,7 @@ Geant4 simulation and ROOT/Python analysis of optical photon collection and timi
 
 On the KNU environment, load the existing CERN LCG view with `source envset.sh`. This setup depends on CVMFS; it is not a portable dependency installer. Use the frozen workflow to build and run in new output directories without replacing a shared executable.
 
-[Current: 2026-09-16 optical-closure baseline](docs/BASELINE-2026-09-16.md) · [Previous baseline](docs/BASELINE-2026-09-15.md).
+[Historical: 2026-09-16 optical-closure baseline](docs/BASELINE-2026-09-16.md) · [Previous baseline](docs/BASELINE-2026-09-15.md).
 
 ## Versions and run conditions
 

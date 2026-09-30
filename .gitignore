@@ -25,3 +25,10 @@ __pycache__/
 **/.mplconfig/
 # New batch output; already tracked historical logs remain unchanged.
 /condor_logs/
+
+# Local results portal links to private study records
+/RESULTS.html
+/analysis/studies/
+
+# Frozen production copies and bulk batch artifacts stay local
+/analysis/reproduction/

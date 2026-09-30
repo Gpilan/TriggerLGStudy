@@ -17,6 +17,7 @@
 
 #include "G4UImanager.hh"
 #include "G4OpticalPhysics.hh"
+#include "CBDsimBoundaryProcess.hh"
 #include "G4OpticalParameters.hh"	
 #include "FTFP_BERT.hh"
 #include "FTFP_BERT_HP.hh"
@@ -59,6 +60,7 @@ int main(int argc, char** argv) {
   G4VModularPhysicsList* physicsList = new FTFP_BERT;
   G4OpticalPhysics* opticalPhysics = new G4OpticalPhysics();
   physicsList->RegisterPhysics(opticalPhysics);
+  physicsList->RegisterPhysics(new CBDsimBoundaryPhysics);
   
 
   auto opt = G4OpticalParameters::Instance();

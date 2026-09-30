@@ -111,8 +111,8 @@ def execute(bundle, run_id, mode, seed, events, position=(0.,0.,0.), direction=(
         raise ValueError('Use a simple run ID, positive seed and positive event count')
     if not all(math.isfinite(v) for v in (*position,*direction)) or math.hypot(*direction)==0:
         raise ValueError('Beam coordinates must be finite and direction nonzero')
-    if scan_s is not None and (not math.isfinite(scan_s) or not 0 <= scan_s <= 29.5):
-        raise ValueError('Assembly scan s must be in [0,29.5] mm')
+    if scan_s is not None and (not math.isfinite(scan_s) or not -29.5 <= scan_s <= 29.5):
+        raise ValueError('Assembly scan s must be in [-29.5,29.5] mm')
     direction=tuple(v/math.hypot(*direction) for v in direction)
     m = json.loads((bundle / 'manifest.json').read_text())
     if m['state'] != 'ready':

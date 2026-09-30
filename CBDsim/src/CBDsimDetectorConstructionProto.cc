@@ -70,8 +70,14 @@ constexpr G4double kTrig12TileCenterSeparationZ = 2.0 * kHzThin + kTrig12TileFac
 // SiPM package (match CBDsimDetectorConstruction front stack thicknesses)
 constexpr G4double kSiPMH = 0.3 * mm;
 constexpr G4double kFilterT = 0.01 * mm;
-/** no-LG rectangular SiPM/gel aperture half-width in x (= LG outlet radius). */
-constexpr G4double kSipmRectHalfX = kRguide;
+/** no-LG models only the coupled active area, not the full PMT package.
+ * Keep 0.10 mm per tile edge: 0.05 mm side tape plus 0.05 mm Al strip.
+ * Approved small tiles: W=15 -> 14.8 mm; W=10 -> 9.8 mm aperture.
+ * The existing 15 mm aperture is retained for larger tiles.
+ */
+constexpr G4double kNoLGEdgeAllowance = 0.10 * mm;
+constexpr G4double kSipmRectHalfX = std::min(kRguide, kHxWide-kNoLGEdgeAllowance);
+static_assert(kSipmRectHalfX > 0., "Tile too narrow for the no-LG edge allowance");
 /** no-LG aperture half-height in z (full scint thin dimension). */
 constexpr G4double kSipmRectHalfZ = kHzThin;
 
@@ -89,6 +95,35 @@ void rectBoundaryXZ(G4double phi, G4double hx, G4double hz, G4double& px, G4doub
   px = scale * c;
   pz = scale * s;
 }
+
+// Geant4 11.2's barycentric intersection allowance can accept a hit on the
+// extension of a narrow triangle, outside the facet itself. Inside() then
+// disagrees with that crossing and a Boolean union can repeat zero steps.
+// Verify the returned hit with the same half Cartesian tolerance used by
+// G4TessellatedSolid::Inside. Vertices, normals and the global tolerance stay
+// unchanged; a rejected plane intersection is not a physical surface hit.
+class ProtoLGFacet final : public G4TriangularFacet {
+ public:
+  using G4TriangularFacet::G4TriangularFacet;
+
+  G4VFacet* GetClone() override {
+    return new ProtoLGFacet(GetVertex(0), GetVertex(1), GetVertex(2), ABSOLUTE);
+  }
+
+  G4bool Intersect(const G4ThreeVector& p, const G4ThreeVector& v,
+                   G4bool outgoing, G4double& distance,
+                   G4double& distFromSurface, G4ThreeVector& normal) override {
+    if (!G4TriangularFacet::Intersect(p, v, outgoing, distance,
+                                      distFromSurface, normal)) return false;
+    const auto hit = p + distance*v;
+    if (G4TriangularFacet::Distance(hit, kInfinity) > 0.5*kCarTolerance) {
+      distance = distFromSurface = kInfinity;
+      normal = G4ThreeVector();
+      return false;
+    }
+    return true;
+  }
+};
 
 G4TessellatedSolid* BuildLightGuideTessellated(G4double endInset = 0., G4double endRadius = kRguide) {
   auto* ts = new G4TessellatedSolid("ProtoLightGuide");
@@ -132,21 +167,21 @@ G4TessellatedSolid* BuildLightGuideTessellated(G4double endInset = 0., G4double 
       const G4ThreeVector& c = v[idx(i + 1, jp)];
       const G4ThreeVector& d = v[idx(i + 1, j)];
       // Quad a-b / d-c: outward normals for positive enclosed volume (GeomSolids1001 if wrong).
-      ts->AddFacet(new G4TriangularFacet(a, b, c, ABSOLUTE));
-      ts->AddFacet(new G4TriangularFacet(a, c, d, ABSOLUTE));
+      ts->AddFacet(new ProtoLGFacet(a, b, c, ABSOLUTE));
+      ts->AddFacet(new ProtoLGFacet(a, c, d, ABSOLUTE));
     }
   }
 
   const G4ThreeVector cbot(0.0, -kHyLong - kLGZGap, 0.0);
   for (G4int j = 0; j < nPhi; ++j) {
     const G4int jp = (j + 1) % nPhi;
-    ts->AddFacet(new G4TriangularFacet(cbot, v[idx(0, jp)], v[idx(0, j)], ABSOLUTE));
+    ts->AddFacet(new ProtoLGFacet(cbot, v[idx(0, jp)], v[idx(0, j)], ABSOLUTE));
   }
 
   const G4ThreeVector ctop(0.0, -kHyLong - kLGZGap - kLguide + endInset, 0.0);
   for (G4int j = 0; j < nPhi; ++j) {
     const G4int jp = (j + 1) % nPhi;
-    ts->AddFacet(new G4TriangularFacet(ctop, v[idx(kNSlice, j)], v[idx(kNSlice, jp)], ABSOLUTE));
+    ts->AddFacet(new ProtoLGFacet(ctop, v[idx(kNSlice, j)], v[idx(kNSlice, jp)], ABSOLUTE));
   }
 
   ts->SetSolidClosed(true);
@@ -228,15 +263,15 @@ G4VPhysicalVolume* CBDsimDetectorConstructionProto::Construct() {
   G4RotationMatrix rotTrig2;
   rotTrig2.rotateZ(halfpi);
 
-  // Fixed world beam, rigid assembly motion toward each local window (-y).
-  // Thus the beam crosses local +y=s, approaching the opposite end (+30 mm).
+  // Fixed world beam; signed rigid assembly scan. Local +y points away from SD.
+  // The beam crosses local y=s: negative s approaches SD, positive s the far end.
   G4double scanS = 0.;
   if (const char* value = std::getenv("CBDsim_PROTO_SCAN_S_MM")) {
     char* end = nullptr;
     scanS = std::strtod(value, &end) * mm;
-    if (end == value || *end != '\0' || !std::isfinite(scanS) || scanS < 0. || scanS > 29.5*mm) {
+    if (end == value || *end != '\0' || !std::isfinite(scanS) || scanS < -29.5*mm || scanS > 29.5*mm) {
       G4Exception("CBDsimDetectorConstructionProto::Construct", "InvalidScanPosition", FatalException,
-                  "CBDsim_PROTO_SCAN_S_MM must be finite and in [0,29.5] mm.");
+                  "CBDsim_PROTO_SCAN_S_MM must be finite and in [-29.5,29.5] mm.");
     }
   }
   G4cout << "[Proto scan] s_mm=" << scanS/mm
@@ -501,7 +536,33 @@ G4VPhysicalVolume* CBDsimDetectorConstructionProto::Construct() {
     G4Exception("CBDsimDetectorConstructionProto::Construct", "InvalidCornerSeal", FatalException,
                 "CBDsim_PROTO_CORNER_SEAL must be 0 or 1.");
   const bool cornerSeal = !sealSetting || G4String(sealSetting)=="1";
-  if (cornerSeal) {
+  if (cornerSeal && withLG) {
+    // Exact decomposition of the existing 10 um tile/foil gap rim. Avoid
+    // nested subtractions with tape and foil that merely touch its faces.
+    const G4double sealTop = -kHyLong + 0.02*mm;
+    const G4double sealBottom = -kHyLong;
+    const G4double centerY = 0.5*(sealTop+sealBottom);
+    const G4double halfY = 0.5*(sealTop-sealBottom);
+    const G4double sideHalfX = 0.5*(xi-kHxWide);
+    const G4double capHalfZ = 0.5*(zi-kHzThin);
+    const G4double sideCenterX = 0.5*(xi+kHxWide);
+    const G4double capCenterZ = 0.5*(zi+kHzThin);
+    auto* side = new G4Box("protoLGCornerSealSide",sideHalfX,halfY,zi);
+    auto* cap = new G4Box("protoLGCornerSealCap",kHxWide,halfY,capHalfZ);
+    auto* sideLog=new G4LogicalVolume(side,FindMaterial("Aluminum"),"protoFoilCornerSealSideLog");
+    auto* capLog=new G4LogicalVolume(cap,FindMaterial("Aluminum"),"protoFoilCornerSealCapLog");
+    for(auto* log:{sideLog,capLog}) {
+      new G4LogicalSkinSurface("protoAlSurfCornerSeal",log,FindSurface("AluminumSurf"));log->SetVisAttributes(fVisFoil);
+    }
+    for(int sign:{-1,1}) {
+      const G4Transform3D sideTr(G4RotationMatrix(),G4ThreeVector(sign*sideCenterX,centerY,0.));
+      const G4Transform3D capTr(G4RotationMatrix(),G4ThreeVector(0.,centerY,sign*capCenterZ));
+      new G4PVPlacement(trWorld1(sideTr),sideLog,"protoFoilCornerSealPhys",worldLog,false,0);
+      new G4PVPlacement(trWorld2(sideTr),sideLog,"protoFoilCornerSealPhys",worldLog,false,1);
+      new G4PVPlacement(trWorld1(capTr),capLog,"protoFoilCornerSealPhys",worldLog,false,0);
+      new G4PVPlacement(trWorld2(capTr),capLog,"protoFoilCornerSealPhys",worldLog,false,1);
+    }
+  } else if (cornerSeal) {
     const G4double sealTop = -kHyLong + 0.02*mm;
     const G4double sealBottom = withLG ? -kHyLong : -yo;
     const G4double sealY = 0.5*(sealTop+sealBottom);
@@ -522,12 +583,51 @@ G4VPhysicalVolume* CBDsimDetectorConstructionProto::Construct() {
       rim = new G4SubtractionSolid("protoCornerSealRightCut", rim, foilYmStripSolid, nullptr,
                                   G4ThreeVector(xRightYm,foilY-sealY,0.));
     }
-    auto* rimLog = new G4LogicalVolume(rim, FindMaterial("Aluminum"), "protoFoilCornerSealLog");
-    new G4LogicalSkinSurface("protoAlSurfCornerSeal", rimLog, FindSurface("AluminumSurf"));
-    const G4Transform3D localRim(G4RotationMatrix(),G4ThreeVector(0.,sealY,0.));
-    new G4PVPlacement(trWorld1(localRim),rimLog,"protoFoilCornerSealPhys",worldLog,false,0);
-    new G4PVPlacement(trWorld2(localRim),rimLog,"protoFoilCornerSealPhys",worldLog,false,1);
-    rimLog->SetVisAttributes(fVisFoil);
+    // Exact axis-aligned cell decomposition of the retained Boolean reference.
+    // Merge along y first: no artificial face at the tile plane y=-kHyLong.
+    struct RimCell { G4double lo[3], hi[3]; };
+    auto cuts=[](std::vector<G4double> v,G4double lo,G4double hi) {
+      v.push_back(lo);v.push_back(hi);
+      v.erase(std::remove_if(v.begin(),v.end(),[&](G4double a){return a<lo || a>hi;}),v.end());
+      std::sort(v.begin(),v.end());v.erase(std::unique(v.begin(),v.end()),v.end());return v;
+    };
+    const G4double stripInner=kSipmRectHalfX+(gelTape?tapeT:0.);
+    const auto xs=cuts({-xi,xi,-kHxWide,kHxWide,-stripInner,stripInner,
+                        -tapeHalfX,tapeHalfX,-tapeHalfX-tapeT,tapeHalfX+tapeT},-xo,xo);
+    const auto ys=cuts({-yi,-yo+ft2+kFoilT+1.e-3*mm,-kHyLong,
+                        tapeCenterY-tapeHalfY,tapeCenterY+tapeHalfY},sealBottom,sealTop);
+    const auto zs=cuts({-zi,zi,-kHzThin,kHzThin,-tapeHalfZ-tapeT,tapeHalfZ+tapeT},-zo,zo);
+    std::vector<RimCell> cells;
+    for(std::size_t i=1;i<xs.size();++i)for(std::size_t j=1;j<ys.size();++j)for(std::size_t k=1;k<zs.size();++k) {
+      const G4ThreeVector middle((xs[i-1]+xs[i])/2.,(ys[j-1]+ys[j])/2.,(zs[k-1]+zs[k])/2.);
+      if(rim->Inside(middle-G4ThreeVector(0.,sealY,0.))==kInside)
+        cells.push_back({{xs[i-1],ys[j-1],zs[k-1]},{xs[i],ys[j],zs[k]}});
+    }
+    for(int axis:{1,0,2}) {
+      bool merged=true;
+      while(merged) {
+        merged=false;
+        for(std::size_t i=0;i<cells.size()&&!merged;++i)for(std::size_t j=i+1;j<cells.size();++j) {
+          bool same=true;
+          for(int a=0;a<3;++a)if(a!=axis && (cells[i].lo[a]!=cells[j].lo[a] || cells[i].hi[a]!=cells[j].hi[a]))same=false;
+          if(same && (cells[i].hi[axis]==cells[j].lo[axis] || cells[j].hi[axis]==cells[i].lo[axis])) {
+            cells[i].lo[axis]=std::min(cells[i].lo[axis],cells[j].lo[axis]);
+            cells[i].hi[axis]=std::max(cells[i].hi[axis],cells[j].hi[axis]);
+            cells.erase(cells.begin()+j);merged=true;break;
+          }
+        }
+      }
+    }
+    for(const auto& cell:cells) {
+      auto* box=new G4Box("protoNoLGCornerSealBox",(cell.hi[0]-cell.lo[0])/2.,(cell.hi[1]-cell.lo[1])/2.,(cell.hi[2]-cell.lo[2])/2.);
+      auto* log=new G4LogicalVolume(box,FindMaterial("Aluminum"),"protoFoilCornerSealLog");
+      new G4LogicalSkinSurface("protoAlSurfCornerSeal",log,FindSurface("AluminumSurf"));
+      const G4Transform3D tr(G4RotationMatrix(),G4ThreeVector((cell.hi[0]+cell.lo[0])/2.,(cell.hi[1]+cell.lo[1])/2.,(cell.hi[2]+cell.lo[2])/2.));
+      new G4PVPlacement(trWorld1(tr),log,"protoFoilCornerSealPhys",worldLog,false,0);
+      new G4PVPlacement(trWorld2(tr),log,"protoFoilCornerSealPhys",worldLog,false,1);
+      log->SetVisAttributes(fVisFoil);
+    }
+    G4cout<<"[Proto noLG corner seal] exact_boxes="<<cells.size()<<G4endl;
   }
   G4cout << "[Proto corner seal] active=" << cornerSeal
          << " surface=AluminumSurf scope=tile_foil_perimeter" << G4endl;
@@ -606,8 +706,38 @@ G4VPhysicalVolume* CBDsimDetectorConstructionProto::Construct() {
   }
   {
     const G4Transform3D tWrap(G4RotationMatrix(), G4ThreeVector(0., 0., 0.));
+    if (!withLG) {
+    // Same five-face shell, preserving bottom cut and exact tape exclusion.
+    // Z faces need a 1um y-tail split around the tape notch; no face overlaps.
+    auto placeFoilBox = [&](const G4String& label,G4double hx,G4double hy,G4double hz,G4double x,G4double y,G4double z) {
+      auto* box = new G4Box(label,hx,hy,hz);
+      auto* log = new G4LogicalVolume(box,FindMaterial("Aluminum"),label+"Log");
+      new G4LogicalSkinSurface(label+"Skin",log,FindSurface("AluminumSurf"));
+      const G4Transform3D t(G4RotationMatrix(),G4ThreeVector(x,y,z));
+      new G4PVPlacement(trWorld1(t),log,"protoFoilWrapPhys",worldLog,false,0);
+      new G4PVPlacement(trWorld2(t),log,"protoFoilWrapPhys",worldLog,false,1);
+      log->SetVisAttributes(fVisFoil);
+    };
+    const G4double ymin=-yo+ft2+kFoilT+1.e-3*mm;
+    const G4double ymain=gelTape ? -kHyLong : ymin;
+    const G4double hyfull=(yo-ymin)/2., cyfull=(yo+ymin)/2.;
+    placeFoilBox("protoWrapXpBox",ft2,hyfull,zi,xi+ft2,cyfull,0.);
+    placeFoilBox("protoWrapXmBox",ft2,hyfull,zi,-xi-ft2,cyfull,0.);
+    placeFoilBox("protoWrapYpBox",xi,ft2,zi,0.,yi+ft2,0.);
+    for(int sign:{-1,1}) {
+      const G4String label=sign<0 ? "protoWrapZmBox" : "protoWrapZpBox";
+      placeFoilBox(label,xo,(yo-ymain)/2.,ft2,0.,(yo+ymain)/2.,sign*(zi+ft2));
+      if(gelTape) {
+        const G4double notchX=tapeHalfX+tapeT;
+        for(int sx:{-1,1})
+          placeFoilBox(label+(sx<0?"TailMinus":"TailPlus"),(xo-notchX)/2.,(ymain-ymin)/2.,ft2,sx*(xo+notchX)/2.,(ymain+ymin)/2.,sign*(zi+ft2));
+      }
+    }
+
+    } else {
     new G4PVPlacement(trWorld1(tWrap), foilWrapLog, "protoFoilWrapPhys", worldLog, false, 0);
     new G4PVPlacement(trWorld2(tWrap), foilWrapLog, "protoFoilWrapPhys", worldLog, false, 1);
+    }
 
     const G4Transform3D tTipRing(G4Transform3D(tipRingRot, G4ThreeVector(0., yTipRing, 0.)));
     if (withLG) {
