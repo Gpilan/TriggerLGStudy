@@ -45,24 +45,24 @@
     "tests/test_verified_timing.py": "f360258f0e625e7de7bc116ea398a472200e5e757d81163dbb79fa1804044377",
     "tools/build_results.py": "12cc11a508f7b24a7dcfbc1fca492dc2f4d11410e49849d148f82fb0034b08a9"
   },
-  "analysis_tool_sha256": "1cf4fb4b8ed2d2fdc412eb1cf36330b077a28abfa614adedbca1feee7113c01d",
+  "analysis_tool_sha256": "6ba61ad6f78a12c056751c318312e826679a0c9d591cffc535075bfb57984158",
   "production_model": "September 30 frozen length/thickness bundle; not the current Geant4 migration source",
   "outputs_sha256": {
     "data/exception-sensitivity.json": "941e8d9d061ec1f8d5c3ebcd0dae6c3623bcc3d0beb2989e42c53cb17b987859",
     "data/input_provenance.json": "b0e0fd2c167c4bb2f7b173e9021cbb9283f53bbaa2e21a935343d718f18febcb",
     "data/summary.csv": "da5a3d85474a8c7d2f81c3ff661b20c7b3d74dad5dea3c64489c309e817dfb0e",
     "data/summary.json": "864edb7af70312079b452b2b905e8761dfbf15502ae6a4ad05ebea13cdb5cd52",
-    "figures/dt_length_lg_w10.png": "b75ee8ae2aa8818da30350bf5c6f373699861217d8405a78d8cd561b06b5370e",
-    "figures/dt_length_lg_w40.png": "aae498b13792f0be3da76c9c235dca08d15861f4d6fbf56f9cf30b07e523bc53",
-    "figures/dt_length_nolg_w10.png": "5a2b1e521d5203bb7ae1642551a8d35d5951824f0b0d6818311eddc7fbdbe136",
-    "figures/dt_thickness_lg_w10.png": "de96ecc5b35cf50eddc0d5c2f52554055f510bcd7376112b2b5c7ff8f7595122",
-    "figures/dt_thickness_lg_w40.png": "0dc6700e86d322945ac8e82ce473e1e164fd7783369e70d92f9e0c2f4f889cbe",
-    "figures/dt_thickness_nolg_w10.png": "63bb8ca70567275b62504615a73874ea295cf913f57fcd4e360a279117d50a23",
-    "figures/fate_fractions_vs_length.png": "7cad28e878174ad15f054fb9d325c394ff36373f7d10880f38d017c7254e57a5",
-    "figures/fate_fractions_vs_thickness.png": "92e1f352ed885e0bf6f2e0fbbf4d1f1ab1da937f6dcbb15ce5bb15e51924c3a7",
-    "figures/photon_yield_vs_length.png": "2afac250f6530bd9e801fc1b2a0d946f2915df6e3d633befd57f22ebf357a3a2",
-    "figures/photon_yield_vs_thickness.png": "008b85d0886f1602e972fc15903a435b3a312310401b4ea32b07918952bf6a23",
-    "figures/sigma_and_detected_vs_length.png": "aa95dc0751065fe9147034731c8f9a66c43df3cdc461aa7754f463fc08ae83ad",
-    "figures/sigma_and_detected_vs_thickness.png": "4fa61ff0620da3aea487c47179610ae6180688fa3af4b18cccc27386d64c4d28"
+    "figures/dt_length_lg_w10.png": "8bf8dbaaa53364b6137a8c5a4d6527171586345c8868536d3bae10236b9a9ac5",
+    "figures/dt_length_lg_w40.png": "d0f27b73cfad75427cfb4dee49354990ec70770c6697af09d1ed2978539ca1d3",
+    "figures/dt_length_nolg_w10.png": "d9d1c0f0c1f54162d9b1dd0fccda47e5356c959507e383d31f636e23adbc368f",
+    "figures/dt_thickness_lg_w10.png": "681049030fc1ceb41bae41b7a41c65742d929dac6ae114b45edfaa305b43e697",
+    "figures/dt_thickness_lg_w40.png": "0f24a77faa39bc9c0e7697d5232c77f420bee2a29745f0d726329d39ba269c8e",
+    "figures/dt_thickness_nolg_w10.png": "403e4067ddc7f839e79be94629f40434792bf824897b779ea30e0aebc93adef2",
+    "figures/fate_fractions_vs_length.png": "d363ba240152041392e57f463e1f253f411ce55a8dd0734fa7bbae7ce798bdcf",
+    "figures/fate_fractions_vs_thickness.png": "d71e93c7f4efcb1cfa4a83fd649238f39e7bbe095753ea86bd21ef741e4be756",
+    "figures/photon_yield_vs_length.png": "53a9599856e012aa77ad617b200d9bccfa3ee489cc19ffb95c08bff4a4291159",
+    "figures/photon_yield_vs_thickness.png": "602ff4f2c25c2cd5949481b1ddb8965d53b130d01f8b026dbdc73e4b2fa43879",
+    "figures/sigma_and_detected_vs_length.png": "7fcfce8c9cba5972bac9c81d995f6ae50766dfa446153b5174bb419256ecd648",
+    "figures/sigma_and_detected_vs_thickness.png": "a0dea3a05b48b5854013ada38abfcc54d7dc44af773c0bc80c33b895163f62c6"
   }
 }

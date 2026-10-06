@@ -85,6 +85,10 @@ def plot(out):
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
+    from matplotlib.ticker import PercentFormatter
+    plt.rcParams.update({'font.size':13, 'axes.labelsize':14, 'axes.titlesize':16,
+                         'xtick.labelsize':12, 'ytick.labelsize':12, 'legend.fontsize':12,
+                         'axes.spines.top':False, 'axes.spines.right':False})
     from collections import Counter
     ROOT.gROOT.SetBatch(True)
     ROOT.gStyle.SetOptStat(0)
@@ -181,6 +185,7 @@ def plot(out):
         print('FIT',tag,len(v),round(row['sigma_ps'],3),flush=True)
     groups=[('nolg',10),('lg',10),('lg',40)]
     colors=['#0072B2','#009E73','#D55E00'];markers=['o','s','^']
+    styles=['-','--','-.']
     label=lambda m,w:('noLG' if m=='nolg' else 'LG')+f' | W = {w} mm'
     def scan_rows(axis,mode,width):
         return sorted([r for r in summaries if r['mode']==mode and r['width_mm']==width
@@ -192,7 +197,7 @@ def plot(out):
         unit='L' if axis=='length' else 'T'
         fixed='T = 5 mm' if axis=='length' else 'L = 60 mm'
         ticks=[30,40,50,60,80] if axis=='length' else [2,3,5,7,10]
-        xlabel=f'Scintillator {axis} {unit} [mm]'
+        xlabel=f'Tile {axis} {unit} [mm]'
         for mode,width in groups:
             c=ROOT.TCanvas(f'dt_{axis}_{mode}_w{width}','',2250,1400);keep.append(c);c.Divide(3,2,.003,.004)
             rr=scan_rows(axis,mode,width)
@@ -202,40 +207,45 @@ def plot(out):
                 draw=h.Clone('draw_'+pad.GetName());draw.SetDirectory(0);keep.append(draw)
                 draw.SetLineColor(ROOT.kBlack);draw.SetLineWidth(2);draw.SetMinimum(0);draw.SetMaximum(h.GetMaximum()*1.45)
                 draw.GetXaxis().SetTitle('#Deltat = T1 - T2 [ns]');draw.GetYaxis().SetTitle('Events / 5 ps')
-                for ax in [draw.GetXaxis(),draw.GetYaxis()]:ax.SetLabelSize(.042);ax.SetTitleSize(.05)
+                for ax in [draw.GetXaxis(),draw.GetYaxis()]:ax.SetLabelSize(.048);ax.SetTitleSize(.055)
                 draw.GetYaxis().SetTitleOffset(1.35);draw.Draw('HIST');curve.Draw('L SAME')
                 text(.15,.94,f'{label(mode,width)} | {unit} = {r[axis+"_mm"]} mm',.045)
-                text(.17,.84,f'#sigma = {r["sigma_ps"]:.2f} #pm {r["sigma_error_ps"]:.2f} ps',.045,ROOT.kRed+1)
-                text(.17,.77,f'N = {r["valid_pairs"]}',.036)
-                text(.17,.70,f'Poisson D/ndf = {r["poisson_deviance"]:.1f}/{r["ndf"]}',.032,ROOT.kRed+1)
+                text(.17,.84,f'#sigma = {r["sigma_ps"]:.2f} #pm {r["sigma_error_ps"]:.2f} ps',.050,ROOT.kRed+1)
+                text(.17,.77,f'N = {r["valid_pairs"]}',.040)
+                text(.17,.70,f'Poisson D/ndf = {r["poisson_deviance"]:.1f}/{r["ndf"]}',.037,ROOT.kRed+1)
                 pad.RedrawAxis()
             c.cd(6);text(.12,.72,label(mode,width),.07);text(.12,.58,fixed,.06)
             text(.12,.43,'Gaussian fit; 5 ps bins',.05);text(.12,.30,'CFD = 0.30; no LED cut',.05)
             c.SaveAs(str(plots/f'dt_{axis}_{mode}_w{width}.png'));archive.cd();c.Write()
-        fig,axs=plt.subplots(1,2,figsize=(14,5.5))
-        for (m,w),color,marker in zip(groups,colors,markers):
+        fig,axs=plt.subplots(1,2,figsize=(13,5.8))
+        for (m,w),color,marker,style in zip(groups,colors,markers,styles):
             rr=scan_rows(axis,m,w);xx=[r[axis+'_mm'] for r in rr]
             for ax,key,err in [(axs[0],'sigma_ps','sigma_error_ps'),(axs[1],'detected_mean','detected_sem')]:
-                ax.errorbar(xx,[r[key] for r in rr],yerr=[r[err] for r in rr],color=color,marker=marker,lw=2,ms=7,capsize=4,label=label(m,w))
-        for ax in axs:ax.set_xlabel(xlabel);ax.set_xticks(ticks);ax.grid(alpha=.25);ax.legend(fontsize=10)
-        axs[0].set_ylabel(r'Gaussian fit $\sigma(\Delta t)$ [ps]')
-        axs[1].set_ylabel('Mean detected photons / event (T1 + T2)')
+                ax.errorbar(xx,[r[key] for r in rr],yerr=[r[err] for r in rr],color=color,marker=marker,linestyle=style,lw=2.3,ms=8,capsize=5,capthick=1.6,elinewidth=1.6,label=label(m,w))
+        for ax in axs:ax.set_xlabel(xlabel);ax.set_xticks(ticks);ax.grid(alpha=.22)
+        axs[0].set_ylabel(r'Gaussian $\sigma(\Delta t)$ [ps]')
+        axs[1].set_ylabel('Detected photons / event\n(T1 + T2)')
         axs[0].set_title('Pair timing');axs[1].set_title('Detected photons')
-        fig.suptitle(f'Tile-{axis} dependence | {fixed}',fontsize=17)
-        fig.text(.08,.025,'3000 events / condition | timing: fit SE; photon count: SEM',fontsize=10)
-        fig.tight_layout(rect=[0,.065,1,.95]);fig.savefig(plots/f'sigma_and_detected_vs_{axis}.png',dpi=180);plt.close(fig)
-        fig,axs=plt.subplots(1,2,figsize=(14,5.5))
-        for (m,w),color,marker in zip(groups,colors,markers):
+        fig.suptitle(f'Tile-{axis} dependence | {fixed}',fontsize=19,y=.98)
+        handles,labels=axs[0].get_legend_handles_labels()
+        fig.legend(handles,labels,loc='upper center',bbox_to_anchor=(.5,.91),ncol=3,frameon=False)
+        fig.text(.5,.018,'3000 events / condition  |  σ: fit SE  |  photon count: SEM',fontsize=11,ha='center')
+        fig.tight_layout(rect=[0,.065,1,.84],w_pad=3);fig.savefig(plots/f'sigma_and_detected_vs_{axis}.png',dpi=180);plt.close(fig)
+        fig,axs=plt.subplots(1,2,figsize=(13,5.8))
+        for (m,w),color,marker,style in zip(groups,colors,markers,styles):
             rr=scan_rows(axis,m,w);xx=[r[axis+'_mm'] for r in rr]
             for ax,key,err in [(axs[0],'generated_mean','generated_sem'),(axs[1],'collection_fraction','collection_fraction_sem')]:
-                ax.errorbar(xx,[r[key] for r in rr],yerr=[r[err] for r in rr],color=color,marker=marker,lw=2,ms=7,capsize=4,label=label(m,w))
-        for ax in axs:ax.set_xlabel(xlabel);ax.set_xticks(ticks);ax.grid(alpha=.25);ax.legend(fontsize=10)
-        axs[0].set_ylabel('Mean generated optical photons / event')
-        axs[1].set_ylabel('Detected / generated photons (T1 + T2)')
-        fig.suptitle(f'Photon yield and collection | {fixed}',fontsize=17)
-        fig.tight_layout(rect=[0,0,1,.95]);fig.savefig(plots/f'photon_yield_vs_{axis}.png',dpi=180);plt.close(fig)
+                ax.errorbar(xx,[r[key] for r in rr],yerr=[r[err] for r in rr],color=color,marker=marker,linestyle=style,lw=2.3,ms=8,capsize=5,capthick=1.6,elinewidth=1.6,label=label(m,w))
+        for ax in axs:ax.set_xlabel(xlabel);ax.set_xticks(ticks);ax.grid(alpha=.22)
+        axs[0].set_ylabel('Generated photons / event')
+        axs[1].set_ylabel('Detected / generated photons')
+        axs[1].yaxis.set_major_formatter(PercentFormatter(1))
+        fig.suptitle(f'Photon yield and collection | {fixed}',fontsize=19,y=.98)
+        handles,labels=axs[0].get_legend_handles_labels()
+        fig.legend(handles,labels,loc='upper center',bbox_to_anchor=(.5,.91),ncol=3,frameon=False)
+        fig.tight_layout(rect=[0,0,1,.84],w_pad=3);fig.savefig(plots/f'photon_yield_vs_{axis}.png',dpi=180);plt.close(fig)
         categories=[('detected','Detected','#2ca02c'),('qe_reject','QE reject','#98df8a'),('absorb_scint','Scint. absorption','#ff7f0e'),('absorb_lg','LG bulk','#1f77b4'),('absorb_lg_surface','LG surface','#17becf'),('absorb_glass','Glass','#aec7e8'),('absorb_other_surface','Other surface','#d62728'),('absorb_other','Other bulk','#8c564b'),('no_rindex','NoRINDEX','#000000')]
-        fig,axs=plt.subplots(1,3,figsize=(16,5.5),sharey=True)
+        fig,axs=plt.subplots(1,3,figsize=(15,7),sharey=True)
         for ax,(m,w) in zip(axs,groups):
             rr=scan_rows(axis,m,w);bottom=np.zeros(len(rr));indices=np.arange(len(rr))
             for key,lab,color in categories:
@@ -243,10 +253,11 @@ def plot(out):
                 ax.bar(indices,vv,bottom=bottom,color=color,label=lab);bottom+=vv
             assert np.allclose(bottom,1,rtol=0,atol=1e-12),'Unplotted fate category'
             ax.set_xticks(indices,[r[axis+'_mm'] for r in rr]);ax.set_xlabel(xlabel);ax.set_title(label(m,w));ax.set_ylim(0,1.02)
-        axs[0].set_ylabel('Fraction of generated optical photons')
-        handles,labels=axs[0].get_legend_handles_labels();fig.legend(handles,labels,loc='lower center',bbox_to_anchor=(.5,.055),ncol=5,fontsize=9)
-        fig.text(.5,.012,'Other surface includes Al/tape outside the LG-surface category; other bulk is the remaining bulk absorption.',ha='center',fontsize=9)
-        fig.suptitle(f'Optical photon fates | {fixed}',fontsize=17);fig.tight_layout(rect=[0,.19,1,.95]);fig.savefig(plots/f'fate_fractions_vs_{axis}.png',dpi=180);plt.close(fig)
+        axs[0].set_ylabel('Fraction of generated photons')
+        axs[0].yaxis.set_major_formatter(PercentFormatter(1))
+        handles,labels=axs[0].get_legend_handles_labels();fig.legend(handles,labels,loc='lower center',bbox_to_anchor=(.5,.065),ncol=3,fontsize=12,frameon=False)
+        fig.text(.5,.012,'Other surface: Al/tape outside LG surface. Other bulk: remaining bulk absorption.',ha='center',fontsize=10.5)
+        fig.suptitle(f'Optical photon fates | {fixed}',fontsize=19);fig.tight_layout(rect=[0,.25,1,.94]);fig.savefig(plots/f'fate_fractions_vs_{axis}.png',dpi=180);plt.close(fig)
     archive.Close()
     check=ROOT.TFile.Open(str(data/'dt_fits.root'))
     for r in summaries:
