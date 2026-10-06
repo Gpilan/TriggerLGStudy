@@ -3,6 +3,8 @@
 #include "G4RunManager.hh"
 #include "G4VUserPhysicsList.hh"
 #include "G4Electron.hh"
+#include "G4Positron.hh"
+#include "Randomize.hh"
 #include "G4Event.hh"
 #include "G4PrimaryVertex.hh"
 #include "G4PrimaryParticle.hh"
@@ -13,7 +15,7 @@
 #include <iostream>
 #include <cmath>
 class Physics: public G4VUserPhysicsList {
- void ConstructParticle() override {G4Electron::Definition();}
+ void ConstructParticle() override {G4Electron::Definition();G4Positron::Definition();}
  void ConstructProcess() override {AddTransportation();}
  void SetCuts() override {}
 };
@@ -44,5 +46,18 @@ int main() {
  command("/gun/position 2 3 0 mm");command("/CBDsim/generator/randx 2 mm");command("/CBDsim/generator/randy 4 mm");
  for(int i=0;i<100;i++) {G4Event e(i);gun->GeneratePrimaries(&e);auto p=e.GetPrimaryVertex()->GetPosition()/mm;
   if(p.x()<1||p.x()>3||p.y()<1||p.y()>5||p.z()!=0)return 4;}
+ command("/gun/particle e+");command("/gun/direction 0 0 1");
+ command("/CBDsim/generator/profile gaussian");command("/CBDsim/generator/sigmaX 2 mm");command("/CBDsim/generator/sigmaY 4 mm");
+ CLHEP::HepRandom::setTheSeed(930200001);
+ double sx=0,sy=0,sxx=0,syy=0,sxy=0;int n=20000;
+ for(int i=0;i<n;i++) {G4Event e(i);gun->GeneratePrimaries(&e);auto p=e.GetPrimaryVertex()->GetPosition()/mm;
+  if(e.GetPrimaryVertex()->GetPrimary()->GetPDGcode()!=-11)return 5;
+  double x=p.x()-2,y=p.y()-3;sx+=x;sy+=y;sxx+=x*x;syy+=y*y;sxy+=x*y;
+ }
+ double mx=sx/n,my=sy/n,vx=sxx/n-mx*mx,vy=syy/n-my*my,cov=sxy/n-mx*my;
+ if(std::abs(mx)>.10||std::abs(my)>.20||std::abs(vx-4)>.2||std::abs(vy-16)>.8||std::abs(cov)>.3)return 6;
+ command("/CBDsim/generator/sigmaX 0 mm");command("/CBDsim/generator/sigmaY 0 mm");
+ {G4Event e(0);gun->GeneratePrimaries(&e);if((e.GetPrimaryVertex()->GetPosition()/mm-G4ThreeVector(2,3,0)).mag()>1e-12)return 7;}
+ std::cout<<"GAUSSIAN n="<<n<<" mean="<<mx<<","<<my<<" variance="<<vx<<","<<vy<<" covariance="<<cov<<std::endl;
  std::cout<<"PASS 8 kinematics cases, 16 tile intersections, 100 spread events"<<std::endl;delete rm;
 }

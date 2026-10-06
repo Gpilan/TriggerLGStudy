@@ -112,13 +112,13 @@ void CBDsimEventAction::EndOfEventAction(const G4Event* evt) {
   CBDsimOpticalDiagnostics::EndEvent(evt->IsAborted());
     G4HCofThisEvent* hce = evt->GetHCofThisEvent();
   if (!hce) {
-    std::cout << "No hit collection!" << std::endl;
-    return;
+    // A missed beam particle is still an incident event in the efficiency denominator.
+    std::cout << "No hit collection: storing empty detector response" << std::endl;
   }
   // GetHC(i): 이 이벤트에 쌓인 HC의 순서 인덱스(0 … n-1).
   // SiPM은 G4THitsCollection<CBDsimSiPMHit> 이지만, dynamic_cast 가 RTTI/DSO 이슈로
   // nullptr 이 되는 환경이 있어, 컬렉션 이름 확인 후 static_cast 사용.
-  const int nhc = hce->GetNumberOfCollections();
+  const int nhc = hce ? hce->GetNumberOfCollections() : 0;
   const G4int evtId = evt->GetEventID();
 
   // 이벤트 0 한 번: HC 이름/ID·이후 fTowerMap 키 확인용 (디버그)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build from a private source snapshot; run immutable-input, collision-safe central-beam smokes.
+"""Build from a private source snapshot; run immutable-input, collision-safe beam-profile smokes.
 Use after `source envset.sh`. No git mutation, shared-build rebuild, or batch submission.
 """
 import argparse
@@ -56,11 +56,12 @@ def libraries(binary, env):
     return raw, {str(Path(x).resolve()): sha(x) for x in sorted(paths)}
 
 
-def prepare(bundle, build_type=""):
+def prepare(bundle, build_type="", tile_width_mm=40.):
+    if tile_width_mm not in (10.,40.):raise ValueError("Beam-study widths are 10 or 40 mm")
     bundle.mkdir(parents=True, exist_ok=False)
     m = {'schema': 1, 'state': 'preparing', 'created_utc': now(), 'repository': str(REPO),
          'head': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=REPO, text=True).strip(),
-         'scope': 'nominal G01 geometry; 60 GeV central e-; one worker; R03 technical baseline'}
+         'scope': 'beam-profile study; explicit particle/profile in each run', 'tile_width_mm':tile_width_mm}
     save(bundle / 'manifest.json', m)
     try:
         for name, args in [('dirty.patch', ['diff', 'HEAD', '--binary']), ('index.patch', ['diff', '--cached', '--binary'])]:
@@ -70,15 +71,22 @@ def prepare(bundle, build_type=""):
                  Path('scripts/frozen_baseline.py'), Path('scripts/validate_frozen_run.py')}
         for directory in ['CBDsim', 'rootIO', 'Reco']:
             for f in (REPO / directory).rglob('*'):
-                if f.is_file() and (f.name == 'CMakeLists.txt' or f.suffix in {'.cc', '.cpp', '.cxx', '.C', '.hh', '.hpp', '.h', '.mac', '.cmake', '.png', '.txt', '.sh', '.py', '.md'}):
+                if f.is_file() and (f.name == 'CMakeLists.txt' or f.suffix in {'.inc', '.cc', '.cpp', '.cxx', '.C', '.hh', '.hpp', '.h', '.mac', '.cmake', '.png', '.txt', '.sh', '.py', '.md'}):
                     paths.add(f.relative_to(REPO))
         for f in (REPO / 'analysis').rglob('*.py'):
-            paths.add(f.relative_to(REPO))
+            rel=f.relative_to(REPO / 'analysis')
+            if not any(x in rel.parts for x in ('reproduction','studies','results','__pycache__')):
+                paths.add(f.relative_to(REPO))
         paths.update(f.relative_to(REPO) for f in (REPO / 'analysis/reference/pmt_r2076').glob('*.csv'))
         for rel in sorted(paths):
             dest = source / rel
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(REPO / rel, dest)
+        geom=source/'CBDsim/src/CBDsimDetectorConstructionProto.cc'
+        text=geom.read_text();old='constexpr G4double kHxWide = 20 * mm;'
+        if text.count(old)!=1:raise RuntimeError('Unexpected width declaration; cannot freeze geometry')
+        geom.write_text(text.replace(old,f'constexpr G4double kHxWide = {tile_width_mm/2:.17g} * mm;'))
+        m['source_transform']={'tile_full_width_mm':tile_width_mm,'length_mm':60,'thickness_mm':5}
         m['source_sha256'] = {str(x): sha(source / x) for x in sorted(paths)}
         m['environment'] = {k: v for k, v in os.environ.items() if k in ENV_KEYS or (k.startswith('G4') and k.endswith('DATA'))}
         m['build_commands'] = [['cmake', '-S', str(source), '-B', str(bundle / 'build'), '-DCMAKE_EXE_LINKER_FLAGS=-Wl,--enable-new-dtags'],
@@ -106,13 +114,17 @@ def prepare(bundle, build_type=""):
         raise
 
 
-def execute(bundle, run_id, mode, seed, events, position=(0.,0.,0.), direction=(0.,0.,1.), scan_s=None, primary_entry_audit=False):
+def execute(bundle, run_id, mode, seed, events, position=(0.,0.,0.), direction=(0.,0.,1.), scan_s=None, primary_entry_audit=False, particle="e+", beam_profile="pencil", sigma_mm=(0.,0.), uniform_width_mm=(0.,0.)):
     if not re.fullmatch(r'[A-Za-z0-9_-]+', run_id) or events < 1 or seed < 1:
         raise ValueError('Use a simple run ID, positive seed and positive event count')
     if not all(math.isfinite(v) for v in (*position,*direction)) or math.hypot(*direction)==0:
         raise ValueError('Beam coordinates must be finite and direction nonzero')
     if scan_s is not None and (not math.isfinite(scan_s) or not -29.5 <= scan_s <= 29.5):
         raise ValueError('Assembly scan s must be in [-29.5,29.5] mm')
+    if particle not in ('e+', 'e-') or beam_profile not in ('pencil','uniform','gaussian'):
+        raise ValueError('Unsupported beam configuration')
+    if len(sigma_mm)!=2 or len(uniform_width_mm)!=2 or not all(math.isfinite(v) and v>=0 for v in (*sigma_mm,*uniform_width_mm)):
+        raise ValueError('Beam widths must be finite and nonnegative')
     direction=tuple(v/math.hypot(*direction) for v in direction)
     m = json.loads((bundle / 'manifest.json').read_text())
     if m['state'] != 'ready':
@@ -126,9 +138,10 @@ def execute(bundle, run_id, mode, seed, events, position=(0.,0.,0.), direction=(
     run.mkdir(parents=True, exist_ok=False)
     r = {'state': 'preparing', 'start_utc': now(), 'mode': mode, 'seed': seed, 'requested_events': events,
          'primary_request': [60000., *position, *direction],
+         'particle':particle, 'beam':dict(profile=beam_profile,sigma_mm=list(sigma_mm),uniform_width_mm=list(uniform_width_mm)),
          'assembly_scan_s_mm': scan_s, 'primary_entry_audit': primary_entry_audit,
          'threads': 1, 'bundle_manifest_sha256': sha(bundle / 'manifest.json'), 'analysis_cli': None,
-         'purpose': 'reproducibility smoke; final physics baseline waits for B01/M01/M02/W01/W02/A01'}
+         'purpose': 'beam-profile implementation smoke; no production efficiency or timing precision claim'}
     save(run / 'manifest.json', r)
     try:
         (run / 'lib').mkdir()
@@ -139,13 +152,15 @@ def execute(bundle, run_id, mode, seed, events, position=(0.,0.,0.), direction=(
         (run / QE).parent.mkdir(parents=True)
         shutil.copy2(bundle / 'source' / QE, run / QE)
         macro = '/vis/disable\n/run/numberOfThreads 1\n/run/initialize\n/run/verbose 0\n/gun/particle e-\n/gun/energy 60 GeV\n/run/beamOn ' + str(events) + '\n'
+        macro=macro.replace('/gun/particle e-', '/gun/particle '+particle)
+        macro=macro.replace('/run/beamOn ', '/CBDsim/generator/profile '+beam_profile+'\n/CBDsim/generator/sigmaX '+str(sigma_mm[0])+' mm\n/CBDsim/generator/sigmaY '+str(sigma_mm[1])+' mm\n/CBDsim/generator/randx '+str(uniform_width_mm[0])+' mm\n/CBDsim/generator/randy '+str(uniform_width_mm[1])+' mm\n/run/beamOn ')
         macro=macro.replace('/run/beamOn ', '/gun/position '+ ' '.join(format(v,'.17g') for v in position)+' mm\n/gun/direction '+ ' '.join(format(v,'.17g') for v in direction)+'\n/run/beamOn ')
         (run / 'run.mac').write_text(macro)
         env = os.environ.copy()
         for k in list(env):
             if k.startswith('CBDsim_') or k.startswith('CBDSIM_') or k in {'G4RUN_MANAGER_TYPE', 'G4FORCE_RUN_MANAGER_TYPE', 'G4FORCENUMBEROFTHREADS', 'LD_PRELOAD'}:
                 env.pop(k)
-        env.update(CBDsim_PROTO_NO_LG='1' if mode == 'nolg' else '0', CBDsim_OPTICAL_DIAG='1',
+        env.update(CBDsim_PRIMARY_VERTEX_AUDIT='1', CBDsim_PROTO_NO_LG='1' if mode == 'nolg' else '0', CBDsim_OPTICAL_DIAG='1',
                    CBDsim_OPTICAL_DIAG_HIST='1', CBDsim_OPTICAL_DIAG_OUT=str(run / 'diagnostics.txt'),
                    CBDsim_OPTICAL_DIAG_HIST_OUT=str(run / 'path.hist'), G4RUN_MANAGER_TYPE='MT')
         if scan_s is not None:
@@ -204,6 +219,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     sub = p.add_subparsers(dest='action', required=True)
     prep = sub.add_parser('prepare'); prep.add_argument('bundle', type=Path)
+    prep.add_argument('--tile-width-mm',type=float,choices=[10.,40.],default=40.)
     prep.add_argument('--build-type', choices=['', 'Release'], default='')
     run = sub.add_parser('run'); run.add_argument('bundle', type=Path); run.add_argument('run_id')
     run.add_argument('--mode', choices=['lg', 'nolg'], required=True)
@@ -211,12 +227,16 @@ def main():
     run.add_argument('--position-mm', nargs=3, type=float, default=(0.,0.,0.))
     run.add_argument('--direction', nargs=3, type=float, default=(0.,0.,1.))
     run.add_argument('--scan-s-mm', type=float)
+    run.add_argument('--particle',choices=['e+','e-'],default='e+')
+    run.add_argument('--beam-profile',choices=['pencil','uniform','gaussian'],default='pencil')
+    run.add_argument('--sigma-mm',nargs=2,type=float,default=(0.,0.))
+    run.add_argument('--uniform-width-mm',nargs=2,type=float,default=(0.,0.))
     run.add_argument('--primary-entry-audit', action='store_true')
     a = p.parse_args(); bundle = a.bundle.resolve()
     if a.action == 'prepare':
-        prepare(bundle, a.build_type)
+        prepare(bundle, a.build_type, a.tile_width_mm)
     else:
-        execute(bundle, a.run_id, a.mode, a.seed, a.events, a.position_mm, a.direction, a.scan_s_mm, a.primary_entry_audit)
+        execute(bundle, a.run_id, a.mode, a.seed, a.events, a.position_mm, a.direction, a.scan_s_mm, a.primary_entry_audit, a.particle, a.beam_profile, a.sigma_mm, a.uniform_width_mm)
 
 
 if __name__ == '__main__':

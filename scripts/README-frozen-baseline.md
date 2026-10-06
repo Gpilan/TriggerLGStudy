@@ -48,3 +48,19 @@ B01 이후 `run`은 `--position-mm x y z`와 `--direction dx dy dz`를 지원합
 ## Signed position scan scope (September2026)
 
 `--scan-s-mm` accepts−29.5..29.5mm (negative toward the sensor), but the interval is an input bound, not a geometry validation. The completed ±25mm campaign used W10 tiles. Shared default W40 with LG at−25mm has inter-assembly overlaps; do not reuse W10 scan offsets at another width without geometry checks. See `docs/CHECKPOINT-2026-09-30.md`.
+
+## Gaussian beam / LED pilot extension
+
+New runs default to `e+`; reproduce old electron settings explicitly with `--particle e-`. Frozen historical scripts and runs are unchanged.
+
+```sh
+python3 scripts/frozen_baseline.py prepare /new/bundle --tile-width-mm 10
+python3 /new/bundle/source/scripts/frozen_baseline.py run /new/bundle gaussian-test \
+  --mode nolg --particle e+ --seed 930300101 --events 4 \
+  --beam-profile gaussian --sigma-mm 2 2 --position-mm 0 0 0 \
+  --direction 0 0 1 --scan-s-mm 0 --primary-entry-audit
+```
+
+`prepare` supports10/40mm full width, with60mm length and5mm thickness. Only the frozen source copy is transformed and hashed. `pencil`, `uniform` (full widths via `--uniform-width-mm`) and `gaussian` (per-axis standard deviations via `--sigma-mm`) are explicit. Gaussian vertices are not clipped/resampled to the crossing area. Beam coordinates are in world x/y at the source plane; these options do not add angular divergence.
+
+Every new run records the actual primary PDG and sampled vertex in a compact audit. Validation compares the ROOT primary to that event's audit, rather than requiring all vertices at the nominal center. Primary entry masks may be empty or contain one/two tiles; misses are permitted. Optical budget and ROOT integrity checks remain. The generator's default uniform-zero setting preserves its legacy RNG draws; the new Gaussian sampler is separately seeded through the Geant4 engine.

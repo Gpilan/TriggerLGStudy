@@ -3,6 +3,7 @@
 import hashlib
 import json
 import math
+import re
 import struct
 from pathlib import Path
 import sys
@@ -16,6 +17,14 @@ def primary_matches(actual, requested):
     return (actual[:4]==expected[:4] and
             all(math.isclose(a,b,rel_tol=2**-23,abs_tol=2**-149)
                 for a,b in zip(actual[4:],expected[4:])))
+
+
+def audited_primary_matches(actual, requested):
+    """Double-precision audit fixes energy, z and normalized direction; x/y may spread."""
+    if len(actual) != 7 or len(requested) != 7:
+        return False
+    return all(math.isfinite(actual[i]) and math.isclose(actual[i], requested[i],
+               rel_tol=1e-12, abs_tol=1e-12) for i in (0, 3, 4, 5, 6))
 
 
 def validate(run, events, seed):
@@ -48,14 +57,41 @@ def validate(run, events, seed):
         raise RuntimeError('Missing event budget IDs')
     if len((run / 'diagnostics.txt.exceptions.txt').read_text().splitlines()) != 1:
         raise RuntimeError('Unexpected optical exceptions')
-    request=json.loads((run/'manifest.json').read_text()).get('primary_request',[60000.,0.,0.,0.,0.,0.,1.])
+    manifest=json.loads((run/'manifest.json').read_text())
+    request=manifest.get('primary_request',[60000.,0.,0.,0.,0.,0.,1.])
+    vertices={}; entries={}
+    if 'beam' in manifest:
+        log=(run/'simulation.log').read_text()
+        pattern=r'PRIMARY_VERTEX event=(\d+) pdg=(-?\d+) energy_MeV=([^ ]+) world_mm=\(([^)]+)\) direction=\(([^)]+)\)'
+        for eid,pdg,energy,xyz,direction in re.findall(pattern,log):
+            eid=int(eid)
+            if eid in vertices:raise RuntimeError('Duplicate vertex audit')
+            kin=[float(energy),*[float(v) for v in xyz.split(',')],*[float(v) for v in direction.split(',')]]
+            if int(pdg)!=(-11 if manifest['particle']=='e+' else 11):raise RuntimeError('Wrong particle PDG')
+            if not audited_primary_matches(kin,request):raise RuntimeError('Beam energy/z/direction mismatch')
+            beam=manifest['beam']
+            for axis in range(2):
+                v=kin[axis+1];center=request[axis+1]
+                if not math.isfinite(v):raise RuntimeError('Nonfinite beam vertex')
+                if beam['profile']=='pencil' or (beam['profile']=='gaussian' and beam['sigma_mm'][axis]==0):
+                    if v!=center:raise RuntimeError('Zero-spread coordinate mismatch')
+                if beam['profile']=='uniform' and abs(v-center)>beam['uniform_width_mm'][axis]/2+1e-12:
+                    raise RuntimeError('Uniform beam outside requested support')
+            vertices[eid]=kin
+        if set(vertices)!=set(range(events)):raise RuntimeError('Missing vertex audit')
+        for eid,trig in re.findall(r'PRIMARY_ENTRY event=(\d+) trigger=(\d+)',log):
+            if int(eid) not in vertices or int(trig) not in (0,1):raise RuntimeError('Invalid tile entry audit')
+            entries.setdefault(int(eid),set()).add(int(trig))
+    seen=set()
     records = []
     for i in range(events):
         tree.GetEntry(i)
         ev = tree.CBDsimEventData
         eid = int(ev.event_number)
         kin = [float(getattr(ev, k)) for k in ['primaryEkin', 'primaryVx', 'primaryVy', 'primaryVz', 'primaryDirX', 'primaryDirY', 'primaryDirZ']]
-        if not primary_matches(kin,request):
+        if eid in seen or eid not in budgets:raise RuntimeError("Invalid ROOT event IDs")
+        seen.add(eid)
+        if not primary_matches(kin,vertices.get(eid,request)):
             raise RuntimeError('Primary kinematics differ from the frozen beam request')
         counts = [int(ev.siPMPhotonSumTrig0), int(ev.siPMPhotonSumTrig1)]
         b = budgets[eid]
@@ -73,7 +109,13 @@ def validate(run, events, seed):
             if len(c) != len(lo) or len(c) != len(hi):
                 raise RuntimeError('Invalid ROOT time arrays')
             hist.append([[j, int(n), float(lo[j]), float(hi[j])] for j, n in enumerate(c) if n])
-        records.append({'event': eid, 'primary': kin, 'detected': counts, 'time_bins': hist, 'budget': b})
+        if any(sum(row[1] for row in h)!=n for h,n in zip(hist,counts)):
+            raise RuntimeError('Time-bin and detected counts disagree')
+        row={'event':eid,'primary':kin,'detected':counts,'time_bins':hist,'budget':b}
+        if vertices:
+            row['particle_pdg']=-11 if manifest['particle']=='e+' else 11
+            row['primary_entered_tiles']=sorted(entries.get(eid,set())) if manifest.get('primary_entry_audit') else None
+        records.append(row)
     f.Close()
     records.sort(key=lambda x: x['event'])
     encoded = json.dumps(records, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()

@@ -16,6 +16,9 @@ public:
 
   virtual void GeneratePrimaries(G4Event*);
 
+  void SetProfile(G4String profile);
+  void SetSigmaX(G4double sigma);
+  void SetSigmaY(G4double sigma);
   void SetTheta(G4double theta);
   G4double GetTheta() const { return fTheta; }
 
@@ -58,6 +61,9 @@ private:
 
   G4double fTheta;
   G4double fPhi;
+  G4String fProfile = "uniform"; // preserves legacy full-width commands
+  G4double fSigmaX = 0.;
+  G4double fSigmaY = 0.;
   G4double fRandX;
   G4double fRandY;
   G4double fY_0;

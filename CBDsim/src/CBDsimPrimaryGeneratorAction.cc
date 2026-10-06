@@ -1,3 +1,7 @@
+#include <cmath>
+#include <cstdlib>
+#include <iomanip>
+#include "G4Event.hh"
 #include "G4ParticleGun.hh"
 #include "G4ParticleDefinition.hh"
 #include "G4ParticleTable.hh"
@@ -65,8 +69,15 @@ CBDsimPrimaryGeneratorAction::~CBDsimPrimaryGeneratorAction() {
 void CBDsimPrimaryGeneratorAction::GeneratePrimaries(G4Event* evt) {
   // /gun owns the nominal position and direction. Optional spreads use world x/y.
   const auto nominal = fParticleGun->GetParticlePosition();
-  const auto offsetX = (G4UniformRand()-0.5)*fRandX;
-  const auto offsetY = (G4UniformRand()-0.5)*fRandY;
+  G4double offsetX=0., offsetY=0.;
+  if (fProfile=="gaussian") {
+    offsetX=G4RandGauss::shoot(0.,1.)*fSigmaX;
+    offsetY=G4RandGauss::shoot(0.,1.)*fSigmaY;
+  } else {
+    // Keep both legacy RNG draws even for a pencil beam.
+    offsetX=(G4UniformRand()-0.5)*(fProfile=="pencil" ? 0. : fRandX);
+    offsetY=(G4UniformRand()-0.5)*(fProfile=="pencil" ? 0. : fRandY);
+  }
   fOrigin = nominal + G4ThreeVector(offsetX, offsetY, 0.);
   fDirection = fParticleGun->GetParticleMomentumDirection();
   fParticleGun->SetParticlePosition(fOrigin);
@@ -85,6 +96,12 @@ void CBDsimPrimaryGeneratorAction::GeneratePrimaries(G4Event* evt) {
     sLastPrimaryDirY = d.y();
     sLastPrimaryDirZ = d.z();
   }
+  if (std::getenv("CBDsim_PRIMARY_VERTEX_AUDIT")) {
+    G4cout << std::setprecision(17) << "PRIMARY_VERTEX event=" << evt->GetEventID()
+           << " pdg=" << fParticleGun->GetParticleDefinition()->GetPDGEncoding()
+           << " energy_MeV=" << sLastPrimaryEkin << " world_mm=" << fOrigin/mm
+           << " direction=" << fDirection.unit() << G4endl;
+  }
   sIdxEvt = sNumEvt;
   sNumEvt++;
 }
@@ -93,6 +110,11 @@ void CBDsimPrimaryGeneratorAction::DefineCommands() {
   // Define /CBDsim/generator command directory using generic messenger class
   fMessenger = new G4GenericMessenger(this, "/CBDsim/generator/", "Primary generator control");
 
+  auto& profile = fMessenger->DeclareMethod("profile", &CBDsimPrimaryGeneratorAction::SetProfile,
+      "pencil, uniform (randx/randy full widths), or gaussian (sigmaX/sigmaY standard deviations)");
+  profile.SetCandidates("pencil uniform gaussian");
+  fMessenger->DeclareMethodWithUnit("sigmaX","mm",&CBDsimPrimaryGeneratorAction::SetSigmaX,"Gaussian world-x standard deviation");
+  fMessenger->DeclareMethodWithUnit("sigmaY","mm",&CBDsimPrimaryGeneratorAction::SetSigmaY,"Gaussian world-y standard deviation");
   G4GenericMessenger::Command& etaCmd = fMessenger->DeclareMethodWithUnit("theta","rad",&CBDsimPrimaryGeneratorAction::SetTheta,"theta of beam");
   etaCmd.SetParameterName("theta",true);
   etaCmd.SetDefaultValue("0.");
@@ -128,4 +150,19 @@ void CBDsimPrimaryGeneratorAction::SetY0(G4double y) {
 }
 void CBDsimPrimaryGeneratorAction::SetZ0(G4double z) {
   auto p=fParticleGun->GetParticlePosition();p.setZ(z);fParticleGun->SetParticlePosition(p);
+}
+
+void CBDsimPrimaryGeneratorAction::SetProfile(G4String value) {
+  if(value!="pencil" && value!="uniform" && value!="gaussian") {
+    G4Exception("SetProfile","InvalidBeamProfile",FatalException,"Expected pencil, uniform or gaussian");return;
+  }
+  fProfile=value;
+}
+void CBDsimPrimaryGeneratorAction::SetSigmaX(G4double value) {
+  if(!std::isfinite(value) || value<0) {G4Exception("SetSigmaX","InvalidBeamSigma",FatalException,"Sigma must be finite and nonnegative");return;}
+  fSigmaX=value;
+}
+void CBDsimPrimaryGeneratorAction::SetSigmaY(G4double value) {
+  if(!std::isfinite(value) || value<0) {G4Exception("SetSigmaY","InvalidBeamSigma",FatalException,"Sigma must be finite and nonnegative");return;}
+  fSigmaY=value;
 }
