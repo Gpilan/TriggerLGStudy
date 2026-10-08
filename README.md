@@ -1,28 +1,19 @@
 # TriggerLGStudy
 
-Geant4 simulation and ROOT/Python analysis of optical photon collection and timing in a two-scintillator trigger. **LG and noLG share one implementation** and are selected through run configuration.
+Geant4 simulation of a two-scintillator trigger, comparing light collection and timing with and without light guides (LG/noLG).
 
-## Start here
+Environment: **Geant4 11.4.0, ROOT 6.34.02, C++17**. `envset.sh` selects the CERN LCG/CVMFS environment used on the KNU server.
 
-- **[Completed scan results](analysis/results/scan_checkpoint_20260930/README.md)** · [September30 code checkpoint](docs/CHECKPOINT-2026-09-30.md)
-- Local workspace: `RESULTS.html` and `analysis/studies/` provide private, generated result navigation; they are not included in this checkout.
-- [Analysis tools and result update workflow](analysis/tools/README.md)
+| Path | Purpose |
+|---|---|
+| `CBDsim/` | Simulation, geometry and optical transport; validation in `CBDsim/tests/` |
+| `rootIO/` | ROOT event data and file I/O |
+| `Reco/` | ROOT event reader executable |
+| `analysis/` | Photon-time analysis, SPE reconstruction and CFD timing |
+| `scripts/` | Reproducible runs, ROOT validation and Condor template |
 
-- [Simulation](CBDsim/) and [geometry validation](CBDsim/tests/proto_geometry/README.md)
-- [Frozen build and run workflow](scripts/README-frozen-baseline.md): explicit LG/noLG mode, seeds, beam settings, source and binary hashes
-- [Precision photon tracing](CBDsim/precision/README.md): shared physics, optional full journeys and terminal records
-- [Optical diagnostics](CBDsim/tests/optical_boundary/README.md) and [sensor response assumptions](CBDsim/tests/sensor_response/README.md)
-- [SPE waveform model](analysis/README-spe-response.md) and [analysis code](analysis/)
-- [Version management](docs/VERSIONING.md) and [historical snapshot index](docs/SNAPSHOTS.md)
+- [Build requirements](docs/GEANT4-MIGRATION.md#build-requirements) · [Frozen run workflow](scripts/README-frozen-baseline.md) · [Condor template](scripts/condor_template.sub)
+- [SPE/CFD model](analysis/README-spe-response.md) · [LED selection](analysis/README-LED.md)
+- [Sensor model](CBDsim/tests/sensor_response/README.md) · [QE data source](analysis/reference/pmt_r2076/README.md)
 
-On the KNU environment, load the existing CERN LCG view with `source envset.sh`. This setup depends on CVMFS; it is not a portable dependency installer. Use the frozen workflow to build and run in new output directories without replacing a shared executable.
-
-[Historical: 2026-09-16 optical-closure baseline](docs/BASELINE-2026-09-16.md) · [Previous baseline](docs/BASELINE-2026-09-15.md).
-
-## Versions and run conditions
-
-`main` is the integrated code line. Short-lived `fix/`, `study/`, and `docs/` branches hold ongoing work. Completed historical versions live under `snapshot/*` tags; tested reference points use `baseline/*` tags. Tags preserve code, while run manifests identify geometry, LG/noLG mode, beam, seeds, sample size, binary and analysis settings.
-
-A validation baseline records which technical checks passed. It does not certify the complete physical detector model. The current sensor response is an idealized conditional wafer-QE model. Absolute PMT timing, collection efficiency, electronics and other real-device effects require further validation.
-
-For comparisons, distinguish Gaussian fit sigma from quantile widths, retain timing failures in efficiency denominators, and verify identical conditions beyond the LG/noLG selection. Existing historical figures and logs retain their original assumptions. Plot output defaults to PNG; add PDF only when explicitly needed.
+The sensor response and SPE waveform are idealized models; their assumptions are documented above. Research results and run histories are maintained separately from the code documentation.

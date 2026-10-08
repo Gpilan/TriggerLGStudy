@@ -23,12 +23,37 @@ __pycache__/
 /.local-context/
 /AGENTS.md
 **/.mplconfig/
-# New batch output; already tracked historical logs remain unchanged.
+# Local Condor submissions and output; keep scripts/condor_template.sub in Git.
+/condor/
 /condor_logs/
 
-# Local results portal links to private study records
+# Research output is archived outside Trigger; do not re-add generated copies.
 /RESULTS.html
 /analysis/studies/
+/analysis/results/
+/analysis/t_res/
+/analysis/analysis/
 
 # Frozen production copies and bulk batch artifacts stay local
 /analysis/reproduction/
+
+# Keep maintained usage/model documentation; research notes remain local.
+*.md
+!/README.md
+!/docs/GEANT4-MIGRATION.md
+!/docs/BOUNDARY-RECOVERY.md
+!/scripts/README-frozen-baseline.md
+!/CBDsim/tests/**/README.md
+!/analysis/README-spe-response.md
+!/analysis/README-LED.md
+!/analysis/reference/**/README.md
+
+# Preserve source, license and attribution documents when present.
+!LICENSE*.md
+!LICENCE*.md
+!NOTICE*.md
+!COPYING*.md
+!AUTHORS*.md
+!PROVENANCE*.md
+!ATTRIBUTION*.md
+!THIRD_PARTY*.md

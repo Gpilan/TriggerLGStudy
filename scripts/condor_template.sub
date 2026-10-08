@@ -1,0 +1,38 @@
+# Trigger CBDsim: 60 GeV e+, central +z pencil beam, LG/noLG, one MT worker.
+# Use a ready frozen_baseline.py bundle (manifest.json + source/ + build/).
+# Its source/build must already match the intended geometry and Geant4 version.
+# On this server a new 11.4 build also needs EXPAT: see docs/GEANT4-MIGRATION.md.
+# Copy this template to condor/job.sub; edit bundle_dir and the run table below.
+# Before submitting: source <bundle_dir>/source/envset.sh
+# Create <bundle_dir>/condor_logs; use shared storage outside Git or under condor/.
+# Check only: condor_submit -dry-run /tmp/trigger-job.ad condor/job.sub
+# Outputs: <bundle_dir>/runs/<run_id>/events_<seed>.root, simulation.log,
+# diagnostics.txt, canonical-events.json, validation.json and manifest.json.
+
+universe = vanilla
+bundle_dir = /absolute/path/to/trigger-bundle
+particle = e+
+run_id = condor_$(mode)_$(seed)_$(ClusterId)_$(ProcId)
+
+executable = /usr/bin/env
+arguments = "python3 '$(bundle_dir)/source/scripts/frozen_baseline.py' run '$(bundle_dir)' '$(run_id)' --mode $(mode) --seed $(seed) --events $(events) --particle $(particle) --beam-profile pencil --position-mm 0 0 0 --direction 0 0 1"
+initialdir = $(bundle_dir)
+
+# Carry the bundle's LCG/Geant4 runtime; the runner verifies libraries and datasets.
+getenv = PATH, LD_LIBRARY_PATH, PYTHONPATH, ROOTSYS, ROOT_INCLUDE_PATH, LCG_VERSION, G4*, GEANT4*
+environment = "PYTHONDONTWRITEBYTECODE=1"
+should_transfer_files = NO
+request_cpus = 1
+request_memory = 2 GB
+request_disk = 4 GB
+
+log = $(bundle_dir)/condor_logs/job_$(ClusterId).log
+output = $(bundle_dir)/condor_logs/$(mode)_$(seed)_$(ClusterId)_$(ProcId).out
+error = $(bundle_dir)/condor_logs/$(mode)_$(seed)_$(ClusterId)_$(ProcId).err
+notification = Never
+
+# One row = one job. Example: 50 events per mode; choose seeds for each campaign.
+queue mode, seed, events from (
+lg   100001 50
+nolg 200001 50
+)

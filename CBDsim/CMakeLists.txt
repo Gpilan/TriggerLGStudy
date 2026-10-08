@@ -10,9 +10,9 @@ project(CBDsim)
 #
 option(WITH_GEANT4_UIVIS "Build example with Geant4 UI and Vis drivers" ON)
 if(WITH_GEANT4_UIVIS)
-find_package(Geant4 REQUIRED ui_all vis_all)
+find_package(Geant4 11.4.0 EXACT REQUIRED ui_all vis_all)
 else()
-find_package(Geant4 REQUIRED)
+find_package(Geant4 11.4.0 EXACT REQUIRED)
 endif()
 
 
@@ -43,6 +43,9 @@ file(GLOB headers ${PROJECT_SOURCE_DIR}/include/*.hh)
 # Add the executable, and link it to the Geant4 libraries
 #
 add_executable(CBDsim CBDsim.cc ${sources} ${headers})
+option(CBDsim_USE_BOUNDARY_ADAPTER "Use the version-specific Trigger boundary adapter" ON)
+target_compile_definitions(CBDsim PRIVATE
+  CBDsim_USE_BOUNDARY_ADAPTER=$<BOOL:${CBDsim_USE_BOUNDARY_ADAPTER}>)
 target_compile_features(CBDsim PUBLIC cxx_std_17)
 target_link_libraries(
   CBDsim
@@ -52,9 +55,8 @@ target_link_libraries(
 )
 
 #----------------------------------------------------------------------------
-# Copy all scripts to the build directory, i.e. the directory in which we
-# build B5. This is so that we can run the executable directly because it
-# relies on these scripts being in the current working directory.
+# Copy interactive UI/visualization assets and ROOT inspection tools.
+# Batch run macros are generated per run by scripts/frozen_baseline.py.
 #
 set(CBDsim_SCRIPTS
   icons.mac
@@ -63,17 +65,6 @@ set(CBDsim_SCRIPTS
   init.mac
   init_vis.mac
   vis.mac
-  run_ele.mac
-  run_ele_60gev.mac
-  run_ele_80gev_3000.mac
-  run_ele_100gev_3000.mac
-  run_ele_120gev_3000.mac
-  run_ele_80_100_120gev_3000each.mac
-  run_muon.mac
-  run_muon_10mev_minimal.mac
-  run_gamma.mac
-  run_verify.mac
-  run_diag_100ev.mac
   verify_root.C
   verify_root_run.sh
 )
@@ -104,9 +95,3 @@ configure_file(
 # Install the executable to 'bin' directory under CMAKE_INSTALL_PREFIX
 #
 install(TARGETS CBDsim DESTINATION bin)
-
-# Explicit opt-in target: production CBDsim contains no precision logging hooks.
-option(CBDsim_BUILD_PRECISION "Enable separate photon precision diagnostic target" OFF)
-if(CBDsim_BUILD_PRECISION)
-  add_subdirectory(precision)
-endif()

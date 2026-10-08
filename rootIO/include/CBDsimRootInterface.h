@@ -27,11 +27,11 @@ private:
   void init();
   void PrepareChain();
   
-  TChain* fChain;
-  TFile* fFile;
-  TTree* fTree;
+  TChain* fChain = nullptr;
+  TFile* fFile = nullptr;
+  TTree* fTree = nullptr;
   std::string fFilename;
-  CBDsimInterface::CBDsimEventData* fEventData;
+  CBDsimInterface::CBDsimEventData* fEventData = nullptr;
   unsigned int fNumEvt;
 };
 

@@ -1,6 +1,6 @@
 #ifndef CBDsimBoundaryProcess_hh
 #define CBDsimBoundaryProcess_hh
-// Geant4 11.2.0-specific recovery of genuine opaque entries skipped as StepTooSmall.
+// Recovery of genuine opaque entries skipped as StepTooSmall in Geant4 11.2.0/11.4.0.
 // See docs/BOUNDARY-RECOVERY.md for scope, dispatch-marker semantics and validation.
 #include "G4Version.hh"
 #include "G4Box.hh"
@@ -26,7 +26,8 @@
 #include <vector>
 #include <cmath>
 #include <iomanip>
-static_assert(G4VERSION_NUMBER == 1120, "Review boundary adapter before changing Geant4 version");
+static_assert(G4VERSION_NUMBER == 1120 || G4VERSION_NUMBER == 1140,
+              "Review boundary adapter before changing Geant4 version");
 
 class CBDsimBoundaryProcess final : public G4OpBoundaryProcess {
  public:

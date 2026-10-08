@@ -1,5 +1,7 @@
 # Frozen technical baselines (R03)
 
+For Geant4 11.4 on KNU, first satisfy the [EXPAT build requirements](../docs/GEANT4-MIGRATION.md#build-requirements). `prepare` does not supply the server's missing EXPAT header path automatically.
+
 Run from the repository after `source envset.sh`. This builds from a copied source
 snapshot, including dirty source, and never rebuilds the shared Condor executable.
 Choose new paths/IDs: existing bundles or runs are rejected rather than overwritten.
@@ -47,7 +49,7 @@ B01 이후 `run`은 `--position-mm x y z`와 `--direction dx dy dz`를 지원합
 
 ## Signed position scan scope (September2026)
 
-`--scan-s-mm` accepts−29.5..29.5mm (negative toward the sensor), but the interval is an input bound, not a geometry validation. The completed ±25mm campaign used W10 tiles. Shared default W40 with LG at−25mm has inter-assembly overlaps; do not reuse W10 scan offsets at another width without geometry checks. See `docs/CHECKPOINT-2026-09-30.md`.
+`--scan-s-mm` accepts−29.5..29.5mm (negative toward the sensor), but the interval is an input bound, not a geometry validation. The completed ±25mm campaign used W10 tiles. Shared default W40 with LG at−25mm has inter-assembly overlaps; do not reuse W10 scan offsets at another width without geometry checks.
 
 ## Gaussian beam / LED pilot extension
 

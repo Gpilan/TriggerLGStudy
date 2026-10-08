@@ -1,7 +1,7 @@
 # Optical boundary recovery — 2026-09-20
 
 This change addresses rare production failures at packaging corners in Geant4
-11.2.0. It does not change the intended tile, gel, window or LG dimensions,
+11.2.0, with a bounded 11.4.0 migration check recorded below. It does not change the intended tile, gel, window or LG dimensions,
 material properties, reflectivity, QE, beam, or global geometry tolerance.
 
 ## Reproduced failures
@@ -33,7 +33,7 @@ reproduced noLG corner. The earlier finite-facet intersection guard is retained.
 
 `CBDsimBoundaryProcess` derives from `G4OpBoundaryProcess`. The installer replaces
 only the optical boundary process and checks that its effective GPIL/DoIt
-ordering remains unchanged. It is compile-time pinned to Geant4 11.2.0.
+ordering remains unchanged. The compile-time guard permits only Geant4 11.2.0 and 11.4.0.
 
 The standard process handles ordinary steps. Recovery requires all of:
 
@@ -141,4 +141,26 @@ normal electron ROOT digest equals the earlier control exactly.
 
 This validation is scoped to these cases. Production still rejects navigation,
 NoRINDEX, budget or provenance failures; it does not bypass them to fill the scan.
-See `analysis/reproduction/nolg30_retry_20260921/README.md` for submitted-job status.
+Submitted-job status is retained in the separately archived production campaign
+`nolg30_retry_20260921`.
+
+## Geant4 11.4 migration check (2026-10-06)
+
+An isolated candidate changed only the version guard before promotion. The
+current shared W40 geometry, materials and wafer QE were preserved; the separate
+September 23 tape candidate was not imported. With Geant4 11.4.0 and seed 42:
+
+- The standard process reproduced 16 NoRINDEX terminations in 64 LG inlet edge
+  probes. The existing recovery algorithm passed all 64 with zero NoRINDEX,
+  unknown/unfinished fates or loops, and a closed photon budget.
+- Normal LG and noLG controls, 200 photons each, had byte-identical diagnostic
+  summaries, path histograms and complete final RNG states with/without recovery.
+- The original short-step dispatch and normal-recovery algorithm is unchanged.
+  Its true-path-length runtime assertion and GPIL/DoIt ordering checks remain.
+
+This checks the stated current-geometry probes. It does not revalidate every
+historical width/length/thickness or the selected old production failure events.
+An LG-specific edge probe was also attempted against noLG; its entry condition
+is inapplicable there and it is not counted as a passing noLG edge test.
+Version-to-version timing equivalence and production readiness remain separate
+gates. See [build and validation notes](GEANT4-MIGRATION.md).

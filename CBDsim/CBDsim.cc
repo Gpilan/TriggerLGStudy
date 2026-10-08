@@ -17,7 +17,12 @@
 
 #include "G4UImanager.hh"
 #include "G4OpticalPhysics.hh"
+#ifndef CBDsim_USE_BOUNDARY_ADAPTER
+#define CBDsim_USE_BOUNDARY_ADAPTER 1
+#endif
+#if CBDsim_USE_BOUNDARY_ADAPTER
 #include "CBDsimBoundaryProcess.hh"
+#endif
 #include "G4OpticalParameters.hh"	
 #include "FTFP_BERT.hh"
 #include "FTFP_BERT_HP.hh"
@@ -60,7 +65,11 @@ int main(int argc, char** argv) {
   G4VModularPhysicsList* physicsList = new FTFP_BERT;
   G4OpticalPhysics* opticalPhysics = new G4OpticalPhysics();
   physicsList->RegisterPhysics(opticalPhysics);
+#if CBDsim_USE_BOUNDARY_ADAPTER
   physicsList->RegisterPhysics(new CBDsimBoundaryPhysics);
+#else
+  G4cout << "[Boundary] Standard Geant4 optical boundary; Trigger adapter disabled" << G4endl;
+#endif
   
 
   auto opt = G4OpticalParameters::Instance();
